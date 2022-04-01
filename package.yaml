@@ -1,10 +1,10 @@
 name:                lazy-tis100
 version:             0.1.0.0
 github:              "githubuser/lazy-tis100"
-license:             BSD3
-author:              "Author name here"
+license:             MIT
+author:              "Benjamin Koch"
 maintainer:          "example@example.com"
-copyright:           "2022 Author name here"
+copyright:           "2022 Benjamin Koch"
 
 extra-source-files:
 - README.md
