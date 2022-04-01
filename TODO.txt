@@ -1,0 +1,44 @@
+- make a monad for reading from neighbours and updating node state
+- evaluate only what is needed to get the output values
+- make backtracking monad with a simple "split" operation that splits the execution state
+  (e.g. "is this a MOV or a ADD instruction here" and it evaluates both possibilities)
+- very simple synthesis: only a few instructions, no immediates or only a few values
+  - apply this to the first task
+  - enforce an iteration limit to cut infinite loops
+- prune hopeless branches, e.g. if we know that we already have more steps than should be needed
+- prune redundant instructions, e.g. "ADD 0" can always be replaced by NOP
+- lazy synthesis of immediate values and inputs:
+  - make variables instead of names and thread them through numeric expressions
+  - only decide when we have a conditional jump (or if we compare it as an output value)
+  - Then, make split cases for:
+    - -999..0, 1..999
+    - -999..-16, -15..0, 1..16, 17..999
+    - binary subdivision after that
+  - Propagating those ranges through expressions should be easy. If the result is too imprecise,
+    we simply split again. The alternative is backpropagating the condition but that could be
+    quite hard, e.g. for "x+x+x+y<10".
+  - We can do the same for inputs to share the first part of the evaluation. For them, we don't
+    split into arbitrary ranges because we will need proper generated values anyway and we don't
+    have to cover all cases, i.e. simple random values will be ok.
+- rank split states:
+  - very positive for each correct output
+  - positive for a few incorrect outputs (at least for the first tasks)
+  - maybe slightly negative for size or iterations - but probably not to avoid making this a breadth first search
+  - very slightly negative for complexity to favour a certain coding style, e.g. NOP instead of ADD 100 for cases
+    where both will work
+- Maybe store puzzles in Lua files:
+  - see https://alandesmet.github.io/TIS-100-Hackers-Guide/index.html
+  - Run Lua as a subprocess and monkey with its math.random to make it similar to C#'s. Then, serialize the relevant data.
+    - There already is a Lua implementation: https://alandesmet.github.io/TIS-100-Hackers-Guide/random.html
+    - I want the same random values because I think the stats are based on the runs with fixed seed.
+  - Look for "math.random" in tis100_Data/sharedassets0.assets. It looks like the official puzzles are also coded in Lua.
+  - The `file` util doesn't know the format but maybe we can extract the puzzles with a regex.
+
+- Other simulators:
+  - https://github.com/eviltrout/tis-100
+  - This one has good code for generating random values for each puzzle:
+    https://github.com/wfraser/tis100-rs/blob/master/src/puzzles.rs
+  - Information about details that are not mentioned in the manual:
+    https://kk4ead.github.io/tis-100/
+  - This is often mentioned and it contains information about the Lua API:
+    https://alandesmet.github.io/TIS-100-Hackers-Guide/index.html
