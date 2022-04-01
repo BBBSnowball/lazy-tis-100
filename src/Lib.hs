@@ -162,9 +162,12 @@ tryRead cpu state ix port = go $ neighbourIndicesForRead cpu state ix port
         go ((ix', LAST, LAST) : xs)
             | ix == ix' = Just ([], LAST, fromInteger 0)
         go ((ix', myPort, theirPort) : xs) = case (cpu `at` ix') of
-            Just (InputNode (v : vs))                                                       -> Just ([(ix', InputNode vs)], myPort, v)
-            Just (ComputeNode prog (NodeState {mode = WRITE ANY   v}))                      -> Just ([(ix', ComputeNode prog (state {mode = HasWritten, lastPort = theirPort}))], myPort, v)
-            Just (ComputeNode prog (NodeState {mode = WRITE port' v})) | port' == theirPort -> Just ([(ix', ComputeNode prog (state {mode = HasWritten}))], myPort, v)
+            Just (InputNode (v : vs)) ->
+                Just ([(ix', InputNode vs)], myPort, v)
+            Just (ComputeNode prog theirState@(NodeState {mode = WRITE ANY   v})) ->
+                Just ([(ix', ComputeNode prog (theirState {mode = HasWritten, lastPort = theirPort}))], myPort, v)
+            Just (ComputeNode prog theirState@(NodeState {mode = WRITE port' v})) | port' == theirPort ->
+                Just ([(ix', ComputeNode prog (theirState {mode = HasWritten}))], myPort, v)
             _ -> go xs
         go [] = Nothing
 
