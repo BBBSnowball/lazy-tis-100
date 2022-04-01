@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, LambdaCase #-}
 module Lib
     ( Port (..),
       JumpCondition (..),
@@ -13,11 +13,15 @@ module Lib
       initialNodeState,
       emptyComputeNode,
       initWithPrograms,
-      scratch_useg0_shape,
-      scratch_useg0_1,
       getAccs,
+      getAccsA,
+      mapNodesToList,
+      mapComputeNodesStateToList,
+      getModes,
+      getLastPorts,
       step,
       stepN,
+      steps,
       printCpu
     ) where
 
@@ -27,12 +31,12 @@ import Data.Array (Array, (//))
 import Data.Either (either)
 import Data.Maybe (catMaybes)
 import Data.List (transpose)
+import Debug.Trace
 
 data Port = UP | LEFT | RIGHT | DOWN | ANY | LAST
     deriving (Eq, Ord, Enum, Show, Read)
 
 -- https://kk4ead.github.io/tis-100/
-portOrderWriteAny = [ UP, LEFT, RIGHT, DOWN ]  -- maybe that means that potential reads are processed starting at the top-left corner?
 portOrderReadAny = [ LEFT, RIGHT, UP, DOWN ]
 
 data JumpCondition = JEZ | JNZ | JGZ | JLZ
@@ -77,33 +81,37 @@ emptyComputeNode :: Node l Int
 emptyComputeNode = ComputeNode (A.listArray (0,-1) []) initialNodeState
 
 initWithPrograms :: NodeState n -> Cpu l n -> [[Instruction l n]] -> Either String (Cpu l n)
-initWithPrograms initialNodeState shape progs = go progs (A.elems shape) []
+initWithPrograms initialNodeState layout progs = go progs (A.elems layout) []
     where
         go (p : ps) (ComputeNode _ state : xs) acc = go ps xs (ComputeNode (A.listArray (0, length p - 1) p) initialNodeState : acc)
         go []       (ComputeNode _ state : xs) acc = Left "not enough programs"
         go ps       (node                : xs) acc = go ps xs (node : acc)
         go (_ : _)  []                         acc = Left "too many programs"
-        go []       []                         acc = Right . A.listArray (A.bounds shape) . reverse $ acc
+        go []       []                         acc = Right . A.listArray (A.bounds layout) . reverse $ acc
 
-scratch_useg0_shape :: Cpu l Int
-scratch_useg0_shape = A.listArray ((0,1),(4,4))
-    [ BrokenNode, InputNode [], BrokenNode, BrokenNode
-    , emptyComputeNode, emptyComputeNode, emptyComputeNode, emptyComputeNode
-    , emptyComputeNode, emptyComputeNode, emptyComputeNode, emptyComputeNode
-    , emptyComputeNode, emptyComputeNode, emptyComputeNode, emptyComputeNode
-    , BrokenNode, BrokenNode, OutputNode [], BrokenNode ]
+getAcc (ComputeNode _ state) = acc state
+getAcc _                     = fromInteger 0
 
-scratch_useg0_1 :: Cpu l Int
-scratch_useg0_1 = either error id $ initWithPrograms initialNodeState scratch_useg0_shape
-    [ [], [MOV (SPort ANY) TAcc], [MOV (SImmediate 4) (TPort LEFT)], []
-    , [MOV (SPort ANY) TAcc], [MOV (SImmediate 1) (TPort ANY)], [], []
-    , [MOV (SImmediate 2) (TPort ANY)], [], [], [] ]
+getAccsA :: Num n => Cpu l n -> Array (Int, Int) n
+getAccsA = fmap getAcc
 
-getAccs :: Num n => Cpu l n -> Array (Int, Int) n
-getAccs = fmap getAcc
+mapNodesToList :: (Node l n -> a) -> Cpu l n -> [[a]]
+mapNodesToList f cpu = map (\y -> map (f2 y) [x0..x1]) [y0..y1]
     where
-        getAcc (ComputeNode _ state) = acc state
-        getAcc _                     = fromInteger 0
+        ((y0, x0), (y1, x1)) = A.bounds cpu
+        f2 y x = f (cpu A.! (y, x))
+
+mapComputeNodesStateToList :: a -> (NodeState n -> a) -> Cpu l n -> [[a]]
+mapComputeNodesStateToList fallback f = mapNodesToList (\x -> case x of { ComputeNode _ state -> f state; _ -> fallback })
+
+getAccs :: Num n => Cpu l n -> [[n]]
+getAccs = mapComputeNodesStateToList (fromInteger 0) acc
+
+getModes :: Cpu l n -> [[NodeMode n]]
+getModes = mapComputeNodesStateToList FINISHED mode
+
+getLastPorts :: Cpu l n -> [[Port]]
+getLastPorts = mapComputeNodesStateToList LAST lastPort
 
 instructionSource :: Instruction l n -> Maybe (InstructionSource n)
 instructionSource (JRO s) = Just s
@@ -262,6 +270,11 @@ stepN cpu n | n <= 0 = cpu
 stepN cpu n = case step cpu of
     (True, cpu') -> cpu'
     (False, cpu') -> stepN cpu' (n-1)
+
+steps :: Cpu Int Int -> [Cpu Int Int]
+steps cpu = cpu : case step cpu of
+    (True, cpu') -> repeat cpu'
+    (False, cpu') -> steps cpu'
 
 padLine line = take 22 $ line ++ repeat ' '
 

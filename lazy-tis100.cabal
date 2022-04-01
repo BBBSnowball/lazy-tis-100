@@ -54,6 +54,7 @@ test-suite lazy-tis100-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Tests.ASpec
       Paths_lazy_tis100
   hs-source-dirs:
       test
@@ -62,5 +63,6 @@ test-suite lazy-tis100-test
       array
     , attoparsec
     , base >=4.7 && <5
+    , hspec
     , lazy-tis100
   default-language: Haskell2010
