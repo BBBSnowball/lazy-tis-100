@@ -31,7 +31,10 @@
   - Run Lua as a subprocess and monkey with its math.random to make it similar to C#'s. Then, serialize the relevant data.
     - There already is a Lua implementation: https://alandesmet.github.io/TIS-100-Hackers-Guide/random.html
     - I want the same random values because I think the stats are based on the runs with fixed seed.
-  - Look for "math.random" in tis100_Data/sharedassets0.assets. It looks like the official puzzles are also coded in Lua.
+  - Look for "math.random" in tis100_Data/sharedassets0.assets.
+    - ~It looks like the official puzzles are also coded in Lua.~
+    - I don't find the normal ones - only TIS-NET. However, it might make sense to code them in Lua instead of Haskell to keep
+      it consistent.
   - The `file` util doesn't know the format but maybe we can extract the puzzles with a regex.
 
 - Other simulators:
