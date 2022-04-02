@@ -28,7 +28,7 @@ module Lib
     ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (forM, forM_, void)
+import Control.Monad (forM, forM_, void, when)
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError, catchError)
 import Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
@@ -142,14 +142,18 @@ data NoEvalReason = SkipNode
 newtype TISEval l n a = TISEval { runTISEval :: ExceptT NoEvalReason (State (Cpu l n)) a }
     deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadState (Cpu l n))
 
-newtype TISEvalForNode l n a = TISEvalForNode { runTISEvalForNode :: ReaderT (NodeIndex, Node l n) (ExceptT NoEvalReason (State (Cpu l n))) a }
-    deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadReader (NodeIndex, Node l n), MonadState (Cpu l n))
+newtype TISEvalForNode l n a = TISEvalForNode { runTISEvalForNode :: ReaderT NodeIndex (StateT (Bool, Node l n) (ExceptT NoEvalReason (State (Cpu l n)))) a }
+    deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadReader NodeIndex)
 
 instance MonadFail (TISEvalForNode l n) where
     fail _ = throwError SkipNode
 
+instance MonadState (Cpu l n) (TISEvalForNode l n) where
+    state = TISEvalForNode . lift . lift . Control.Monad.State.state
+
 class Monad m => MonadTISEval l n m | m -> l n where
     getCpu :: m (Cpu l n)
+    --FIXME buffer updates until call to `commit`, which tells us that previous updates must be visible to other nodes
     maybeUpdateNode :: NodeIndex -> (Node l n -> Maybe (Node l n, a)) -> m (Maybe a)
 
 maybeUpdateNodeImpl :: MonadState (Cpu l n) m => NodeIndex -> (Node l n -> Maybe (Node l n, a)) -> m (Maybe a)
@@ -172,29 +176,34 @@ instance MonadTISEval l n (TISEvalForNode l n) where
 maybeUpdateNode_ :: MonadTISEval l n m => NodeIndex -> (Node l n -> Maybe (Node l n)) -> m ()
 maybeUpdateNode_ ix f = void $ maybeUpdateNode ix (fmap (,()) . f)
 
+updateNode :: MonadTISEval l n m => NodeIndex -> Node l n -> m ()
+updateNode ix node' = maybeUpdateNode ix (fmap (,()) . Just . const node') >>= \case
+    Just () -> pure ()
+    Nothing -> error "invalid node index in updateNode"
+
 class MonadTISEval l n m => MonadTISEvalForNode l n m | m -> l n where
     getCurrentNodeIndex :: m NodeIndex
     getCurrentNode :: m (Node l n)
     updateCurrentNode :: Node l n -> m ()
 
 instance MonadTISEvalForNode l n (TISEvalForNode l n) where
-    getCurrentNodeIndex = fmap fst Control.Monad.Reader.ask
-    getCurrentNode = fmap snd Control.Monad.Reader.ask
-    --FIXME make this StateT instead of ReaderT and store the updated state with a flag (and make order with ExceptT so that we don't loose updates on skip)
-    --FIXME buffer updates until call to `commit`, which tells us that previous updates must be visible to other nodes
-    --updateCurrentNode newValue = getCurrentNodeIndex >>= \ix -> Control.Monad.State.modify' (\cpu -> cpu // [(ix, newValue)])
-    updateCurrentNode newValue = getCurrentNodeIndex >>= \ix -> maybeUpdateNode_ ix (const $ Just newValue)
+    getCurrentNodeIndex = Control.Monad.Reader.ask
+    getCurrentNode = fmap snd $ TISEvalForNode $ Control.Monad.State.get
+    updateCurrentNode node' = TISEvalForNode $ Control.Monad.State.put (True, node')
 
 catchSkip :: TISEvalForNode l n () -> TISEvalForNode l n ()
 catchSkip = flip catchError $ \case
     SkipNode -> pure ()
-    e -> throwError e
+    --e -> throwError e  -- redundant until we have more error types
 
 foreachNode :: TISEvalForNode l n () -> TISEval l n ()
 foreachNode action = getCpu >>= \cpu -> forM_ (A.assocs cpu) go
     where
-        go (ix, node) = TISEval $
-            runReaderT (runTISEvalForNode $ catchSkip $ action) (ix, node)
+        go (ix, node) =
+            let step1 = runReaderT (runTISEvalForNode $ catchSkip $ action) ix
+                step2 = runStateT step1 (False, node)
+            in TISEval step2 >>= \((), (updated, node')) ->
+                when updated $ updateNode ix node'
 
 runTISEvalForCpu :: TISEval l n a -> Cpu l n -> (Either NoEvalReason a, Cpu l n)
 runTISEvalForCpu action cpu = runState (runExceptT (runTISEval action)) cpu
@@ -210,9 +219,6 @@ stepPrepareReadForNode = do
     Just inst <- pure $ prog `at` pc state
     Just (SPort port) <- pure $ instructionSource inst
     updateCurrentNode $ ComputeNode prog state { mode = READ port }
-
-stepPrepareRead :: Cpu l n -> Cpu l n
-stepPrepareRead = runTISEvalForCpu_ $ foreachNode stepPrepareReadForNode
 
 neighbourIndex :: NodeIndex -> Port -> (NodeIndex, Port, Port)
 neighbourIndex (y, x) LEFT  = ((y, x-1), LEFT,  RIGHT)
@@ -267,9 +273,6 @@ stepReadForNode = getCurrentNode >>= \case
             Just (actualPort, value) <- tryRead UP UP
             updateCurrentNode $ OutputNode (value : xs)
         _ -> pure ()
-
-stepRead :: Num n => Cpu l n -> Cpu l n
-stepRead = runTISEvalForCpu_ $ foreachNode stepReadForNode
 
 saturate :: Ord i => (i, i) -> i -> i
 saturate (min, max) x
@@ -341,11 +344,9 @@ stepRun cpu = (isDone (map snd updates), cpu // updates)
         go' prog state HCF = Just $ state { mode = ONFIRE }
 
 step :: Cpu Int Int -> (Bool, Cpu Int Int)
---FIXME This won't work yet for two reasons:
--- 1. The first step may update the node value without updating the reader.
--- 2. Skip in one part must not skip the other part.
---step = stepRun . runTISEvalForCpu_ (foreachNode $ stepPrepareReadForNode >> stepReadForNode)
-step = stepRun . stepRead . stepPrepareRead
+--NOTE Read and Run must be in separate calls to foreachNode (i.e. first process all reads, then start run and write)
+--     so other nodes only see writes in the next step.
+step = stepRun . runTISEvalForCpu_ (foreachNode $ catchSkip stepPrepareReadForNode >> catchSkip stepReadForNode)
 
 stepN :: Cpu Int Int -> Int -> (Cpu Int Int)
 stepN cpu n | n <= 0 = cpu
