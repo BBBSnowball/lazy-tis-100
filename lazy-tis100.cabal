@@ -25,6 +25,7 @@ source-repository head
 
 library
   exposed-modules:
+      LazyTIS100.Parser
       Lib
   other-modules:
       Paths_lazy_tis100
@@ -34,7 +35,10 @@ library
       array
     , attoparsec
     , base >=4.7 && <5
+    , containers
     , mtl
+    , neat-interpolation
+    , text
     , transformers
   default-language: Haskell2010
 
@@ -49,8 +53,11 @@ executable lazy-tis100-exe
       array
     , attoparsec
     , base >=4.7 && <5
+    , containers
     , lazy-tis100
     , mtl
+    , neat-interpolation
+    , text
     , transformers
   default-language: Haskell2010
 
@@ -59,6 +66,8 @@ test-suite lazy-tis100-test
   main-is: Spec.hs
   other-modules:
       Tests.ASpec
+      Tests.ParserSpec
+      Tests.Puzzle00150SelfTestDiagnostic
       Paths_lazy_tis100
   hs-source-dirs:
       test
@@ -67,8 +76,11 @@ test-suite lazy-tis100-test
       array
     , attoparsec
     , base >=4.7 && <5
+    , containers
     , hspec
     , lazy-tis100
     , mtl
+    , neat-interpolation
+    , text
     , transformers
   default-language: Haskell2010
