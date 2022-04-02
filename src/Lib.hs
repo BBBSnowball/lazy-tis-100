@@ -1,4 +1,6 @@
-{-# LANGUAGE TupleSections, LambdaCase #-}
+{-# LANGUAGE TupleSections, LambdaCase, GeneralizedNewtypeDeriving,
+    MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, FlexibleContexts,
+    ScopedTypeVariables #-}
 module Lib
     ( Port (..),
       JumpCondition (..),
@@ -25,7 +27,14 @@ module Lib
       printCpu
     ) where
 
-import Control.Monad (forM, forM_)
+import Control.Monad (forM, forM_, void)
+import Control.Monad.Trans.Class (MonadTrans, lift)
+import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
+import Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
+import qualified Control.Monad.Reader
+import Control.Monad.State (MonadState, State, StateT, runStateT, runState)
+import qualified Control.Monad.State
+
 import qualified Data.Array as A
 import Data.Array (Array, (//))
 import Data.Either (either)
@@ -61,7 +70,8 @@ data NodeState n = NodeState { acc :: !n, bak :: !n, lastPort :: !Port, pc :: !I
     deriving (Eq, Ord, Show, Read)
 data Node l n = BrokenNode | InputNode [n] | OutputNode [n] | ComputeNode (NodeProgram l n) (NodeState n)
     deriving (Eq, Ord, Show, Read)
-type Cpu l n = Array (Int, Int) (Node l n)
+type NodeIndex = (Int, Int)
+type Cpu l n = Array NodeIndex (Node l n)
 
 instance Show n => Show (InstructionSource n) where
     show (SPort port) = show port
@@ -92,7 +102,7 @@ initWithPrograms initialNodeState layout progs = go progs (A.elems layout) []
 getAcc (ComputeNode _ state) = acc state
 getAcc _                     = fromInteger 0
 
-getAccsA :: Num n => Cpu l n -> Array (Int, Int) n
+getAccsA :: Num n => Cpu l n -> Array NodeIndex n
 getAccsA = fmap getAcc
 
 mapNodesToList :: (Node l n -> a) -> Cpu l n -> [[a]]
@@ -124,36 +134,96 @@ instructionTarget :: Instruction l n -> Maybe InstructionTarget
 instructionTarget (MOV _ t) = Just t
 instructionTarget _ = Nothing
 
-stepPrepareRead1 :: Instruction l n -> NodeState n -> Maybe (NodeState n)
-stepPrepareRead1 inst state = case instructionSource inst of
-    Just (SPort p) -> Just $ state { mode = READ p }
-    _ -> Nothing
 
---FIXME merge with stepRead
-stepPrepareRead :: Cpu l n -> Cpu l n
-stepPrepareRead cpu = cpu // go (A.assocs cpu)
+data NoEvalReason = SkipNode
+
+--FIXME make transformers so actions can stack this over Writer or IO
+newtype TISEval l n a = TISEval { runTISEval :: ExceptT NoEvalReason (State (Cpu l n)) a }
+    deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadState (Cpu l n))
+
+newtype TISEvalForNode l n a = TISEvalForNode { runTISEvalForNode :: ExceptT NoEvalReason (ReaderT (NodeIndex, Node l n) (State (Cpu l n))) a }
+    deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadReader (NodeIndex, Node l n), MonadState (Cpu l n))
+
+instance MonadFail (TISEvalForNode l n) where
+    fail _ = throwError SkipNode
+
+class Monad m => MonadTISEval l n m | m -> l n where
+    getCpu :: m (Cpu l n)
+    maybeUpdateNode :: NodeIndex -> (Node l n -> Maybe (Node l n, a)) -> m (Maybe a)
+
+maybeUpdateNodeImpl :: MonadState (Cpu l n) m => NodeIndex -> (Node l n -> Maybe (Node l n, a)) -> m (Maybe a)
+maybeUpdateNodeImpl ix f = do
+    cpu <- Control.Monad.State.get
+    case (cpu `at` ix) >>= f of
+        Nothing -> pure Nothing
+        Just (node', result) -> do
+            ($!) Control.Monad.State.put (cpu // [(ix, node')])
+            pure $ Just result
+
+instance MonadTISEval l n (TISEval l n) where
+    getCpu = Control.Monad.State.get
+    maybeUpdateNode = maybeUpdateNodeImpl
+
+instance MonadTISEval l n (TISEvalForNode l n) where
+    getCpu = Control.Monad.State.get
+    maybeUpdateNode = maybeUpdateNodeImpl
+
+maybeUpdateNode_ :: MonadTISEval l n m => NodeIndex -> (Node l n -> Maybe (Node l n)) -> m ()
+maybeUpdateNode_ ix f = void $ maybeUpdateNode ix (fmap (,()) . f)
+
+class MonadTISEval l n m => MonadTISEvalForNode l n m | m -> l n where
+    getCurrentNodeIndex :: m NodeIndex
+    getCurrentNode :: m (Node l n)
+    updateCurrentNode :: Node l n -> m ()
+
+instance MonadTISEvalForNode l n (TISEvalForNode l n) where
+    getCurrentNodeIndex = fmap fst Control.Monad.Reader.ask
+    getCurrentNode = fmap snd Control.Monad.Reader.ask
+    --FIXME make this StateT instead of ReaderT and store the updated state with a flag (and make order with ExceptT so that we don't loose updates on skip)
+    --FIXME buffer updates until call to `commit`, which tells us that previous updates must be visible to other nodes
+    --updateCurrentNode newValue = getCurrentNodeIndex >>= \ix -> Control.Monad.State.modify' (\cpu -> cpu // [(ix, newValue)])
+    updateCurrentNode newValue = getCurrentNodeIndex >>= \ix -> maybeUpdateNode_ ix (const $ Just newValue)
+
+foreachNode :: TISEvalForNode l n () -> TISEval l n ()
+foreachNode action = getCpu >>= \cpu -> forM_ (A.assocs cpu) go
     where
-        go [] = []
-        go ((ix, ComputeNode prog state) : xs) =
-            case prog `at` pc state of
-                Nothing -> go xs
-                Just inst ->
-                    case stepPrepareRead1 inst state of
-                        Nothing -> go xs
-                        Just state' -> (ix, ComputeNode prog state') : go xs
-        go (x : xs) = go xs
+        go (ix, node) = TISEval $ do
+            result <- lift $ runReaderT (runExceptT $ runTISEvalForNode action) (ix, node)
+            case result of
+                Left SkipNode -> pure ()
+                Left other -> throwError other
+                Right () -> pure ()
 
-neighbourIndex :: (Int, Int) -> Port -> ((Int, Int), Port, Port)
+runTISEvalForCpu :: TISEval l n a -> Cpu l n -> (Either NoEvalReason a, Cpu l n)
+runTISEvalForCpu action cpu = runState (runExceptT (runTISEval action)) cpu
+
+runTISEvalForCpu_ :: TISEval l n a -> Cpu l n -> Cpu l n
+runTISEvalForCpu_ action cpu = snd $ runState (runExceptT (runTISEval action)) cpu
+
+
+stepPrepareReadForNode :: TISEvalForNode l n ()
+stepPrepareReadForNode = do
+    --NOTE Failed pattern matches will skip this node.
+    ComputeNode prog state <- getCurrentNode
+    Just inst <- pure $ prog `at` pc state
+    Just (SPort port) <- pure $ instructionSource inst
+    updateCurrentNode $ ComputeNode prog state { mode = READ port }
+
+--FIXME use one foreachNode for both stepPrepareReadForNode and stepReadForNode
+stepPrepareRead :: Cpu l n -> Cpu l n
+stepPrepareRead = runTISEvalForCpu_ $ foreachNode stepPrepareReadForNode
+
+neighbourIndex :: NodeIndex -> Port -> (NodeIndex, Port, Port)
 neighbourIndex (y, x) LEFT  = ((y, x-1), LEFT,  RIGHT)
 neighbourIndex (y, x) RIGHT = ((y, x+1), RIGHT, LEFT)
 neighbourIndex (y, x) UP    = ((y-1, x), UP,    DOWN)
 neighbourIndex (y, x) DOWN  = ((y+1, x), DOWN,  UP)
 neighbourIndex (y, x) z     = ((y, x), z, z)  -- usually invalid but allowed special case for LAST
 
-isValidNodeIndex :: Cpu l n -> (Int, Int) -> Bool
+isValidNodeIndex :: Cpu l n -> NodeIndex -> Bool
 isValidNodeIndex cpu ix = A.inRange (A.bounds cpu) ix
 
-neighbourIndicesForRead :: Cpu l n -> NodeState n -> (Int, Int) -> Port -> [((Int, Int), Port, Port)]
+neighbourIndicesForRead :: Cpu l n -> NodeState n -> NodeIndex -> Port -> [(NodeIndex, Port, Port)]
 neighbourIndicesForRead cpu state myIndex port = map (neighbourIndex myIndex) $ applicableNeighbours port
     where
         applicableNeighbours ANY = portOrderReadAny
@@ -163,7 +233,7 @@ neighbourIndicesForRead cpu state myIndex port = map (neighbourIndex myIndex) $ 
 at :: A.Ix i => Array i e -> i -> Maybe e
 arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
-tryRead :: Num n => Cpu l n -> NodeState n -> (Int, Int) -> Port -> Maybe ([((Int, Int), Node l n)], Port, n)
+tryRead :: Num n => Cpu l n -> NodeState n -> NodeIndex -> Port -> Maybe ([(NodeIndex, Node l n)], Port, n)
 tryRead cpu state ix port = go $ neighbourIndicesForRead cpu state ix port
     where
         -- special case: LAST used without preceding ANY is like NIL
@@ -179,19 +249,26 @@ tryRead cpu state ix port = go $ neighbourIndicesForRead cpu state ix port
             _ -> go xs
         go [] = Nothing
 
-stepRead :: Num n => Cpu l n -> Cpu l n
-stepRead cpu = foldl go cpu (A.assocs cpu)
+stepReadForNode :: Num n => TISEvalForNode l n ()
+stepReadForNode = getCurrentNode >>= \case
+        ComputeNode prog state@(NodeState {mode = READ port}) -> do
+            cpu <- getCpu
+            ix <- getCurrentNodeIndex
+            Just (updates, actualPort, value) <- pure $ tryRead cpu state ix port
+            updateCurrentNode (ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state})
+            updateOtherNodes updates
+        (OutputNode xs) -> do
+            cpu <- getCpu
+            ix <- getCurrentNodeIndex
+            Just (updates, actualPort, value) <- pure $ tryRead cpu (NodeState { acc = 0, bak = 0, lastPort = LAST, pc = 0, mode = READ UP }) ix UP
+            updateCurrentNode $ OutputNode (value : xs)
+            updateOtherNodes updates
+        _ -> pure ()
     where
-        go :: Num n => Cpu l n -> ((Int, Int), Node l n) -> Cpu l n
-        go cpu (ix, ComputeNode prog state@(NodeState {mode = READ port})) =
-            seq cpu $ case tryRead cpu state ix port of
-                Nothing -> cpu
-                Just (updates, actualPort, value) -> cpu // ((ix, ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state}) : updates)
-        go cpu (ix, OutputNode xs) =
-            seq cpu $ case tryRead cpu (NodeState { acc = 0, bak = 0, lastPort = LAST, pc = 0, mode = READ UP }) ix UP of
-                Nothing -> cpu
-                Just (updates, actualPort, value) -> cpu // ((ix, OutputNode (value : xs)) : updates)
-        go cpu _ = cpu
+        updateOtherNodes = mapM_ $ \(ix, node') -> maybeUpdateNode_ ix (const $ Just node')
+
+stepRead :: Num n => Cpu l n -> Cpu l n
+stepRead = runTISEvalForCpu_ $ foreachNode stepReadForNode
 
 saturate :: Ord i => (i, i) -> i -> i
 saturate (min, max) x
@@ -211,7 +288,7 @@ stepRun cpu = (isDone (map snd updates), cpu // updates)
         isDone (ComputeNode _ NodeState { mode = _ } : xs) = False
         isDone (_ : xs) = isDone xs
 
-        go :: ((Int, Int), Node Int Int) -> Maybe ((Int, Int), Node Int Int)
+        go :: (NodeIndex, Node Int Int) -> Maybe (NodeIndex, Node Int Int)
         go (ix, ComputeNode prog state) = (ix,) . ComputeNode prog <$> case prog `at` pc state of
             Nothing -> Just $ state { mode = FINISHED}
             Just inst ->  go' prog state inst

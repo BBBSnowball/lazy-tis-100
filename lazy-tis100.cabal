@@ -34,6 +34,8 @@ library
       array
     , attoparsec
     , base >=4.7 && <5
+    , mtl
+    , transformers
   default-language: Haskell2010
 
 executable lazy-tis100-exe
@@ -48,6 +50,8 @@ executable lazy-tis100-exe
     , attoparsec
     , base >=4.7 && <5
     , lazy-tis100
+    , mtl
+    , transformers
   default-language: Haskell2010
 
 test-suite lazy-tis100-test
@@ -65,4 +69,6 @@ test-suite lazy-tis100-test
     , base >=4.7 && <5
     , hspec
     , lazy-tis100
+    , mtl
+    , transformers
   default-language: Haskell2010
