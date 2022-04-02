@@ -204,13 +204,12 @@ runTISEvalForCpu_ action cpu = snd $ runState (runExceptT (runTISEval action)) c
 
 stepPrepareReadForNode :: TISEvalForNode l n ()
 stepPrepareReadForNode = do
-    --NOTE Failed pattern matches will skip this node.
+    --NOTE Failed pattern matches will skip processing for this node.
     ComputeNode prog state <- getCurrentNode
     Just inst <- pure $ prog `at` pc state
     Just (SPort port) <- pure $ instructionSource inst
     updateCurrentNode $ ComputeNode prog state { mode = READ port }
 
---FIXME use one foreachNode for both stepPrepareReadForNode and stepReadForNode
 stepPrepareRead :: Cpu l n -> Cpu l n
 stepPrepareRead = runTISEvalForCpu_ $ foreachNode stepPrepareReadForNode
 
@@ -234,12 +233,11 @@ neighbourIndicesForRead myIndex lastPort port = map (neighbourIndex myIndex) $ a
 at :: A.Ix i => Array i e -> i -> Maybe e
 arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
-tryReadOld :: Num n => Cpu l n -> NodeState n -> NodeIndex -> Port -> TISEvalForNode l n (Maybe (Port, n))
-tryReadOld cpu state ix port = go2 $ neighbourIndicesForRead ix (lastPort state) port
+tryRead :: Num n => Port -> Port -> TISEvalForNode l n (Maybe (Port, n))
+tryRead lastPort port = do
+    ix <- getCurrentNodeIndex
+    firstJustsM . map tryReadOne $ neighbourIndicesForRead ix lastPort port
     where
-        --go2 = foldl (<|>) Nothing . map _ . map go
-        go2 = firstJustsM . map go
-
         firstJustsM :: Monad m => [m (Maybe a)] -> m (Maybe a)
         firstJustsM [] = pure Nothing
         firstJustsM (x : xs) = x >>= \case
@@ -247,9 +245,8 @@ tryReadOld cpu state ix port = go2 $ neighbourIndicesForRead ix (lastPort state)
             Nothing -> firstJustsM xs
 
         -- special case: LAST used without preceding ANY is like NIL
-        go (theirIndex, LAST, LAST)
-            | ix == theirIndex = pure $ Just (LAST, fromInteger 0)
-        go (theirIndex, myPort, theirPort) = maybeUpdateNode theirIndex $ \case
+        tryReadOne (theirIndex, LAST, LAST) = pure $ Just (LAST, fromInteger 0)
+        tryReadOne (theirIndex, myPort, theirPort) = maybeUpdateNode theirIndex $ \case
             InputNode (v : vs) ->
                 Just (InputNode vs, (myPort, v))
             ComputeNode prog theirState@(NodeState {mode = WRITE ANY   v}) ->
@@ -259,25 +256,14 @@ tryReadOld cpu state ix port = go2 $ neighbourIndicesForRead ix (lastPort state)
                 let node' = ComputeNode prog (theirState {mode = HasWritten})
                 in Just (node', (myPort, v))
             _ -> Nothing
-        updateNode ix node' = maybeUpdateNode_ ix (const $ Just node')
-
-tryRead :: Num n => NodeState n -> Port -> TISEvalForNode l n (Maybe (Port, n))
-tryRead state port = do
-    cpu <- getCpu
-    ix <- getCurrentNodeIndex
-    result <- tryReadOld cpu state ix port
-    case result of
-        Nothing -> pure Nothing
-        Just (actualPort, value) ->
-            pure $ Just (actualPort, value)
 
 stepReadForNode :: Num n => TISEvalForNode l n ()
 stepReadForNode = getCurrentNode >>= \case
         ComputeNode prog state@(NodeState {mode = READ port}) -> do
-            Just (actualPort, value) <- tryRead state port
+            Just (actualPort, value) <- tryRead (lastPort state) port
             updateCurrentNode (ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state})
         (OutputNode xs) -> do
-            Just (actualPort, value) <- tryRead (NodeState { acc = 0, bak = 0, lastPort = LAST, pc = 0, mode = READ UP }) UP
+            Just (actualPort, value) <- tryRead UP UP
             updateCurrentNode $ OutputNode (value : xs)
         _ -> pure ()
 
@@ -354,6 +340,10 @@ stepRun cpu = (isDone (map snd updates), cpu // updates)
         go' prog state HCF = Just $ state { mode = ONFIRE }
 
 step :: Cpu Int Int -> (Bool, Cpu Int Int)
+--FIXME This won't work yet for two reasons:
+-- 1. The first step may update the node value without updating the reader.
+-- 2. Skip in one part must not skip the other part.
+--step = stepRun . runTISEvalForCpu_ (foreachNode $ stepPrepareReadForNode >> stepReadForNode)
 step = stepRun . stepRead . stepPrepareRead
 
 stepN :: Cpu Int Int -> Int -> (Cpu Int Int)
