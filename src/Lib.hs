@@ -234,23 +234,30 @@ neighbourIndicesForRead myIndex lastPort port = map (neighbourIndex myIndex) $ a
 at :: A.Ix i => Array i e -> i -> Maybe e
 arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
-tryReadOld :: Num n => Cpu l n -> NodeState n -> NodeIndex -> Port -> Maybe (TISEvalForNode l n (), Port, n)
+tryReadOld :: Num n => Cpu l n -> NodeState n -> NodeIndex -> Port -> TISEvalForNode l n (Maybe (Port, n))
 tryReadOld cpu state ix port = go2 $ neighbourIndicesForRead ix (lastPort state) port
     where
-        go2 = foldl (<|>) Nothing . map go
+        --go2 = foldl (<|>) Nothing . map _ . map go
+        go2 = firstJustsM . map go
+
+        firstJustsM :: Monad m => [m (Maybe a)] -> m (Maybe a)
+        firstJustsM [] = pure Nothing
+        firstJustsM (x : xs) = x >>= \case
+            Just y -> pure $ Just y
+            Nothing -> firstJustsM xs
+
         -- special case: LAST used without preceding ANY is like NIL
-        go (ix', LAST, LAST)
-            | ix == ix' = Just (pure (), LAST, fromInteger 0)
-        go (ix', myPort, theirPort) = case (cpu `at` ix') of
-            Just (InputNode (v : vs)) ->
-                let update = updateNode ix' (InputNode vs)
-                in Just (update, myPort, v)
-            Just (ComputeNode prog theirState@(NodeState {mode = WRITE ANY   v})) ->
-                let update = updateNode ix' (ComputeNode prog (theirState {mode = HasWritten, lastPort = theirPort}))
-                in Just (update, myPort, v)
-            Just (ComputeNode prog theirState@(NodeState {mode = WRITE port' v})) | port' == theirPort ->
-                let update = updateNode ix' (ComputeNode prog (theirState {mode = HasWritten}))
-                in Just (update, myPort, v)
+        go (theirIndex, LAST, LAST)
+            | ix == theirIndex = pure $ Just (LAST, fromInteger 0)
+        go (theirIndex, myPort, theirPort) = maybeUpdateNode theirIndex $ \case
+            InputNode (v : vs) ->
+                Just (InputNode vs, (myPort, v))
+            ComputeNode prog theirState@(NodeState {mode = WRITE ANY   v}) ->
+                let node' = ComputeNode prog (theirState {mode = HasWritten, lastPort = theirPort})
+                in Just (node', (myPort, v))
+            ComputeNode prog theirState@(NodeState {mode = WRITE port' v}) | port' == theirPort ->
+                let node' = ComputeNode prog (theirState {mode = HasWritten})
+                in Just (node', (myPort, v))
             _ -> Nothing
         updateNode ix node' = maybeUpdateNode_ ix (const $ Just node')
 
@@ -258,10 +265,10 @@ tryRead :: Num n => NodeState n -> Port -> TISEvalForNode l n (Maybe (Port, n))
 tryRead state port = do
     cpu <- getCpu
     ix <- getCurrentNodeIndex
-    case tryReadOld cpu state ix port of
+    result <- tryReadOld cpu state ix port
+    case result of
         Nothing -> pure Nothing
-        Just (updates, actualPort, value) -> do
-            updates
+        Just (actualPort, value) ->
             pure $ Just (actualPort, value)
 
 stepReadForNode :: Num n => TISEvalForNode l n ()
