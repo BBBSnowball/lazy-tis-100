@@ -30,7 +30,7 @@ module Lib
 import Control.Applicative ((<|>))
 import Control.Monad (forM, forM_, void)
 import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError)
+import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError, catchError)
 import Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
 import qualified Control.Monad.Reader
 import Control.Monad.State (MonadState, State, StateT, runStateT, runState)
@@ -142,7 +142,7 @@ data NoEvalReason = SkipNode
 newtype TISEval l n a = TISEval { runTISEval :: ExceptT NoEvalReason (State (Cpu l n)) a }
     deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadState (Cpu l n))
 
-newtype TISEvalForNode l n a = TISEvalForNode { runTISEvalForNode :: ExceptT NoEvalReason (ReaderT (NodeIndex, Node l n) (State (Cpu l n))) a }
+newtype TISEvalForNode l n a = TISEvalForNode { runTISEvalForNode :: ReaderT (NodeIndex, Node l n) (ExceptT NoEvalReason (State (Cpu l n))) a }
     deriving (Functor, Applicative, Monad, MonadError NoEvalReason, MonadReader (NodeIndex, Node l n), MonadState (Cpu l n))
 
 instance MonadFail (TISEvalForNode l n) where
@@ -185,15 +185,16 @@ instance MonadTISEvalForNode l n (TISEvalForNode l n) where
     --updateCurrentNode newValue = getCurrentNodeIndex >>= \ix -> Control.Monad.State.modify' (\cpu -> cpu // [(ix, newValue)])
     updateCurrentNode newValue = getCurrentNodeIndex >>= \ix -> maybeUpdateNode_ ix (const $ Just newValue)
 
+catchSkip :: TISEvalForNode l n () -> TISEvalForNode l n ()
+catchSkip = flip catchError $ \case
+    SkipNode -> pure ()
+    e -> throwError e
+
 foreachNode :: TISEvalForNode l n () -> TISEval l n ()
 foreachNode action = getCpu >>= \cpu -> forM_ (A.assocs cpu) go
     where
-        go (ix, node) = TISEval $ do
-            result <- lift $ runReaderT (runExceptT $ runTISEvalForNode action) (ix, node)
-            case result of
-                Left SkipNode -> pure ()
-                Left other -> throwError other
-                Right () -> pure ()
+        go (ix, node) = TISEval $
+            runReaderT (runTISEvalForNode $ catchSkip $ action) (ix, node)
 
 runTISEvalForCpu :: TISEval l n a -> Cpu l n -> (Either NoEvalReason a, Cpu l n)
 runTISEvalForCpu action cpu = runState (runExceptT (runTISEval action)) cpu
