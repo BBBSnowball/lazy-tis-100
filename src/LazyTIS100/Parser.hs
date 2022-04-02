@@ -4,7 +4,7 @@ module LazyTIS100.Parser where
 import Prelude hiding (takeWhile)
 
 import Control.Applicative
-import Control.Monad (when)
+import Control.Monad (forM, forM_, void, when)
 
 import Data.Attoparsec.Text
 
@@ -12,9 +12,12 @@ import qualified Data.Array as A
 import Data.Array (Array, (//))
 import Data.Char (isSpace)
 import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
+
+import LazyTIS100.Types hiding (instructionSource, instructionTarget)
 
 data StreamType = StreamInput | StreamOutput | StreamImage
     deriving (Eq, Ord, Enum, Show, Read)
@@ -139,3 +142,91 @@ puzzleParser = do
             match [] [] = pure []
             match (p : ps) [] = ((head types,"",p,const []) :) <$> match ps []
             in match positions1' streams
+
+
+port :: Parser Port
+port = choice
+    [ asciiCI "UP" >> pure UP
+    , asciiCI "LEFT" >> pure LEFT
+    , asciiCI "RIGHT" >> pure RIGHT
+    , asciiCI "DOWN" >> pure DOWN
+    , asciiCI "ANY" >> pure ANY
+    , asciiCI "LAST" >> pure LAST ]
+    <?> "port"
+
+instructionSource :: Integral n => Parser (InstructionSource n)
+instructionSource = choice
+    [ asciiCI "ACC" >> pure SAcc
+    , asciiCI "NIL" >> pure SNil
+    , SPort <$> port
+    , SImmediate <$> (signed decimal) ]
+    <* skipSpaceInLine
+    <?> "source"
+
+instructionTarget :: Parser InstructionTarget
+instructionTarget = choice
+    [ asciiCI "ACC" >> pure TAcc
+    , asciiCI "NIL" >> pure TNil
+    , TPort <$> port ]
+    <* skipSpaceInLine
+    <?> "target"
+
+label :: Parser Text
+label = T.pack <$> (many1 (letter <|> digit) <* skipSpaceInLine <?> "label")
+
+instruction :: Integral n => Parser (Instruction Text n)
+instruction = choice
+    [ asciiCI "JMP" *> skipSpaceInLine *> (JMP <$> label) <?> "JMP"
+    , asciiCI "JEZ" *> skipSpaceInLine *> (J JEZ <$> label) <?> "JEZ"
+    , asciiCI "JNZ" *> skipSpaceInLine *> (J JNZ <$> label) <?> "JNZ"
+    , asciiCI "JGZ" *> skipSpaceInLine *> (J JGZ <$> label) <?> "JGZ"
+    , asciiCI "JLZ" *> skipSpaceInLine *> (J JLZ <$> label) <?> "JLZ"
+    , asciiCI "JRO" *> skipSpaceInLine *> (JRO <$> instructionSource) <?> "JRO"
+    , asciiCI "MOV" *> skipSpaceInLine *> (MOV <$> instructionSource <* optComma <*> instructionTarget) <?> "MOV"
+    , asciiCI "ADD" *> skipSpaceInLine *> (ADD <$> instructionSource) <?> "ADD"
+    , asciiCI "SUB" *> skipSpaceInLine *> (SUB <$> instructionSource) <?> "SUB"
+    , asciiCI "NEG" *> skipSpaceInLine *> pure NEG <?> "NEG"
+    , asciiCI "SWP" *> skipSpaceInLine *> pure SWP <?> "SWP"
+    , asciiCI "SAV" *> skipSpaceInLine *> pure SAV <?> "SAV"
+    , asciiCI "NOP" *> skipSpaceInLine *> pure NOP <?> "NOP"
+    , asciiCI "HCF" *> skipSpaceInLine *> pure HCF <?> "HCF"
+    ]
+    where
+        optComma = option "" (string ",") >> skipSpaceInLine
+
+program :: Integral n => Parser (NodeProgram n n)
+program = do
+    skipSpace
+    lines <- programLine `sepBy` endOfLine
+    skipSpace
+    let labelToAddr = Map.fromList $ do
+        (i, (lbls, _)) <- zip [0..] lines
+        lbl <- lbls
+        pure (lbl, i)
+    insts <- forM lines $ \(_, inst) -> case mapLabel inst labelToAddr of
+        Left lbl -> fail $ "missing label: " <> T.unpack lbl
+        Right inst' -> pure inst'
+    pure $ A.listArray (0, length insts - 1) insts
+    where
+        optBreakpoint = option "" (string "!") >> skipSpaceInLine
+        programLine = (,) <$> many (try $ optBreakpoint *> label <* ":" <* skipSpace) <*> (optBreakpoint *> instruction)
+        mapLabel (JMP lbl) m = case Map.lookup lbl m of
+            Nothing -> Left lbl
+            Just lbl' -> Right $ JMP lbl'
+        mapLabel (J cond lbl) m = case Map.lookup lbl m of
+            Nothing -> Left lbl
+            Just lbl' -> Right $ J cond lbl'
+        mapLabel (JRO x) _ = Right $ JRO x
+        mapLabel (MOV x y) _ = Right $ MOV x y
+        mapLabel (ADD x) _ = Right $ ADD x
+        mapLabel (SUB x) _ = Right $ SUB x
+        mapLabel NEG _ = Right $ NEG
+        mapLabel SWP _ = Right $ SWP
+        mapLabel SAV _ = Right $ SAV
+        mapLabel NOP _ = Right $ NOP
+        mapLabel HCF _ = Right $ HCF
+
+programs :: Integral n => Parser (Map.Map n (NodeProgram n n))
+programs = Map.fromList <$> many programWithNum
+    where
+        programWithNum = (,) <$> (skipSpace *> string "@" *> decimal <* skipSpace) <*> program
