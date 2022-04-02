@@ -309,9 +309,16 @@ stepRun cpu = (isDone (map snd updates), cpu // updates)
         getSourceValue state SAcc = Just $ acc state
         getSourceValue state SNil = Just 0
 
+        isSourceConstant state (SPort LAST) = lastPort state == LAST
+        isSourceConstant state (SPort _) = False
+        isSourceConstant state (SImmediate _) = True
+        isSourceConstant state SAcc = True
+        isSourceConstant state SNil = True
+
         go' :: NodeProgram Int Int -> NodeState Int -> Instruction Int Int -> Maybe (NodeState Int)
+        go' prog NodeState { mode = FINISHED } _ = Nothing
         go' prog state@NodeState { mode = HasWritten } _ = Just $ nextInstruction prog state
-        go' prog state (JMP lbl) | mode state /= FINISHED =
+        go' prog state (JMP lbl) =
             let newPc = saturate (A.bounds prog) lbl in
             Just $ state { pc = newPc, mode = if newPc == pc state then FINISHED else RUN }
         go' prog state (J cond lbl) = let
@@ -326,7 +333,7 @@ stepRun cpu = (isDone (map snd updates), cpu // updates)
                 else Just $ nextInstruction prog state
         go' prog state (JRO src) = getSourceValue state src >>= \value ->
             let newPc = saturate (A.bounds prog) (pc state + fromInteger (toInteger value)) in
-            Just $ state { pc = newPc }
+            Just $ state { pc = newPc, mode = if newPc == pc state && isSourceConstant state src then FINISHED else RUN }
         go' prog NodeState { mode = WRITE _ _ } (MOV _ _) = Nothing  -- still waiting for value to be written
         go' prog state (MOV src tgt) = getSourceValue state src >>= \value ->
             case tgt of
