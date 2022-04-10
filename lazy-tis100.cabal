@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       LazyTIS100.Parser
+      LazyTIS100.Types
       Lib
   other-modules:
       Paths_lazy_tis100

@@ -22,4 +22,7 @@ Haskell on Debian in VM on Apple M1:
 - `git clone https://github.com/haskell/haskell-ide-engine --recurse-submodules && cd haskell-ide-engine && stack ./install.hs hie-9.0.2 && build-doc-9.0.2`
 - Fails with an error like this: https://gitlab.haskell.org/ghc/ghc/-/issues/18228
 
-This may also be useful: `nix-shell -p autoPatchelfHook numactl ncurses5 ncurses gmp --run "autoPatchelf /home/parallels/.stack/programs/"`
+This may also be useful:
+- `nix-shell -p autoPatchelfHook numactl ncurses5 ncurses gmp --run "autoPatchelf /home/parallels/.stack/programs/"`
+- `stack exec -- ghcid -c="stack ghci src/Lib.hs test/Spec.hs" -T="main" --warnings $@ --reload src`
+- `stack ghci src/Lib.hs test/Tests/ASpec.hs src/LazyTIS100/Parser.hs --ghci-options -XOverloadedStrings`

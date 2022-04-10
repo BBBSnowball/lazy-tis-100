@@ -67,9 +67,35 @@ p1program = [text|
         @7
         MOV LEFT, DOWN
     |]
+p1programPrinted = [text|
+        @0
+        00: MOV UP DOWN
+
+        @1
+        00: MOV RIGHT DOWN
+
+        @2
+        00: MOV UP LEFT
+
+        @3
+        00: MOV UP DOWN
+
+        @4
+        00: MOV UP DOWN
+
+        @5
+        00: MOV UP DOWN
+
+        @6
+        00: MOV UP RIGHT
+
+        @7
+        00: MOV LEFT DOWN
+    |]
+
 
 parseProgramsToList :: T.Text -> Either String (Map.Map Int [Instruction Int Int])
-parseProgramsToList str = Map.map A.elems <$> parseOnly LazyTIS100.Parser.programs str
+parseProgramsToList str = Map.map A.elems <$> parseOnly LazyTIS100.Parser.programsParser str
 
 
 spec :: Spec
@@ -78,8 +104,11 @@ spec = do
         it "can be converted to text" $ show p1 `shouldBe` p1str <> "\n"
         it "can be parsed" $ read p1str `shouldBe` p1
     describe "text format of programs" $ do
-        it "can be parsed" $ parseProgramsToList p1program `shouldBe` Right (Map.fromList [
-            (0, [MOV (SPort UP) (TPort DOWN)]), (1, [MOV (SPort RIGHT) (TPort DOWN)]),
-            (2, [MOV (SPort UP) (TPort LEFT)]), (3, [MOV (SPort UP) (TPort DOWN)]),
-            (4, [MOV (SPort UP) (TPort DOWN)]), (5, [MOV (SPort UP) (TPort DOWN)]),
-            (6, [MOV (SPort UP) (TPort RIGHT)]), (7, [MOV (SPort LEFT) (TPort DOWN)]) ])
+        let programsAsLists = (Map.fromList [
+                (0, [MOV (SPort UP) (TPort DOWN)]), (1, [MOV (SPort RIGHT) (TPort DOWN)]),
+                (2, [MOV (SPort UP) (TPort LEFT)]), (3, [MOV (SPort UP) (TPort DOWN)]),
+                (4, [MOV (SPort UP) (TPort DOWN)]), (5, [MOV (SPort UP) (TPort DOWN)]),
+                (6, [MOV (SPort UP) (TPort RIGHT)]), (7, [MOV (SPort LEFT) (TPort DOWN)]) ])
+        let programsAsArrays = Map.map (\xs -> A.listArray (0, length xs - 1) xs) programsAsLists
+        it "can be parsed" $ parseProgramsToList p1program `shouldBe` Right programsAsLists
+        it "can be converted to text" $ showTISPrograms programsAsArrays `shouldBe` p1programPrinted

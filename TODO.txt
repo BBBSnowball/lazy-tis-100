@@ -1,11 +1,14 @@
-- make a monad for reading from neighbours and updating node state
+- DONE make a monad for reading from neighbours and updating node state
+- DONE parsers and printers
+  - QuickCheck round-trip-ability?
+
 - evaluate only what is needed to get the output values
 - make backtracking monad with a simple "split" operation that splits the execution state
   (e.g. "is this a MOV or a ADD instruction here" and it evaluates both possibilities)
 - very simple synthesis: only a few instructions, no immediates or only a few values
   - apply this to the first task
   - enforce an iteration limit to cut infinite loops
-- prune hopeless branches, e.g. if we know that we already have more steps than should be needed
+- prune hopeless branches, e.g. if we know that we already have more steps than should be needed or if next output takes too long
 - prune redundant instructions, e.g. "ADD 0" can always be replaced by NOP
 - lazy synthesis of immediate values and inputs:
   - make variables instead of names and thread them through numeric expressions
@@ -23,6 +26,10 @@
 - rank split states:
   - very positive for each correct output
   - positive for a few incorrect outputs (at least for the first tasks)
+    - positive for reading one value from each input and producing one value on each output but no points for further incorrect outputs.
+      Unfortunately, this doesn't mean that the output value is somehow related to the input (which is what we want).
+    - When we have lazy evaluation driven by the output: Reading a values from an input shows that there is a connection so give points
+      for reading the first value from each input.
   - maybe slightly negative for size or iterations - but probably not to avoid making this a breadth first search
   - very slightly negative for complexity to favour a certain coding style, e.g. NOP instead of ADD 100 for cases
     where both will work

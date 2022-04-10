@@ -1,5 +1,14 @@
 {-# LANGUAGE OverloadedStrings, RecordWildCards #-}
-module LazyTIS100.Parser where
+module LazyTIS100.Parser (
+    StreamType (..),
+    StreamGenerator,
+    TileType (..),
+    Puzzle (..),
+    puzzleParser,
+    --port, instructionSource, instructionTarget, instruction,
+    programParser, programsParser,
+    showTISProgram, showTISPrograms
+) where
 
 import Prelude hiding (takeWhile)
 
@@ -194,8 +203,8 @@ instruction = choice
     where
         optComma = option "" (string ",") >> skipSpaceInLine
 
-program :: Integral n => Parser (NodeProgram n n)
-program = do
+programParser :: Integral n => Parser (NodeProgram n n)
+programParser = do
     skipSpace
     lines <- programLine `sepBy` endOfLine
     skipSpace
@@ -226,7 +235,22 @@ program = do
         mapLabel NOP _ = Right $ NOP
         mapLabel HCF _ = Right $ HCF
 
-programs :: Integral n => Parser (Map.Map n (NodeProgram n n))
-programs = Map.fromList <$> many programWithNum
+programsParser :: Integral n => Parser (Map.Map n (NodeProgram n n))
+programsParser = Map.fromList <$> many programWithNum
     where
-        programWithNum = (,) <$> (skipSpace *> string "@" *> decimal <* skipSpace) <*> program
+        programWithNum = (,) <$> (skipSpace *> string "@" *> decimal <* skipSpace) <*> programParser
+
+
+showT :: Show a => a -> Text
+showT = T.pack . show
+
+showIntegralT :: Integral a => a -> Text
+showIntegralT = showT . toInteger
+
+showTISProgram :: (Show n, Integral n) => NodeProgram n n -> Text
+showTISProgram prog = T.intercalate "\n" $ map showInstructionWithLabel $ A.assocs prog
+    where showInstructionWithLabel (idx, instr) = (if idx < 10 then "0" else "") <> (showIntegralT idx) <> ": " <> showT instr
+
+showTISPrograms :: (Show n, Integral n) => Map.Map n (NodeProgram n n) -> Text
+showTISPrograms progs = T.intercalate "\n\n" $ map showProgramWithIndex $ Map.toAscList progs
+    where showProgramWithIndex (idx, prog) = "@" <> (showIntegralT idx) <> "\n" <> showTISProgram prog
