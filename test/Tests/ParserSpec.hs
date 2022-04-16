@@ -3,8 +3,10 @@ module Tests.ParserSpec (spec) where
 
 import qualified Data.Array as A
 import qualified Data.Bifunctor
+import qualified Data.Bitraversable
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
+import qualified Text.Read
 
 import Data.Attoparsec.Text (parseOnly)
 
@@ -124,6 +126,9 @@ spec = do
 showT :: Show a => a -> T.Text
 showT = T.pack . show
 
+traceIf :: Bool -> String -> b -> b
+traceIf cond msg = if cond then trace msg else id
+
 traceShowIf :: Show a => Bool -> a -> b -> b
 traceShowIf cond msg = if cond then traceShow msg else id
 
@@ -131,10 +136,13 @@ prop_InstructionRoundtrip :: Instruction Int Int -> Bool
 prop_InstructionRoundtrip instr = withTISArbitrary $ let
     instr2 = showTISInstruction instr
     instr3 = parseOnly LazyTIS100.Parser.instructionParser instr2
-    instr4 = showTISInstruction <$> instr3
-    ok1 = Right (Data.Bifunctor.first showT instr) == instr3
+    instr3' :: Either String (Instruction Int Int)
+    instr3' = instr3 >>= Data.Bitraversable.bitraverse parseLabel pure
+    parseLabel = Text.Read.readEither . T.unpack
+    instr4 = showTISInstruction <$> instr3'
+    ok1 = Right instr == instr3'
     ok2 = Right instr2 == instr4
     in
-        traceShowIf (not ok1) [Right (Data.Bifunctor.first showT instr), instr3] $
-        traceShowIf (not ok2) [Right instr2, instr4] $
+        traceIf (not ok1) "ok1: " $ traceShowIf (not ok1) [Right instr, instr3'] $
+        traceIf (not ok2) "ok2: " $ traceShowIf (not ok2) [Right instr2, instr4] $
         ok1 && ok2
