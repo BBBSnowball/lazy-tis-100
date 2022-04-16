@@ -28,6 +28,16 @@ dependencies:
 - mtl
 - neat-interpolation
 - text
+- generic-data
+- generic-functor
+
+ghc-options:
+  - -Wall
+  - -Wno-unused-imports
+  - -Wno-name-shadowing
+  - -Wno-unused-matches
+  - -Wno-missing-signatures
+  - -Wno-unused-top-binds
 
 library:
   source-dirs: src
@@ -54,3 +64,4 @@ tests:
     dependencies:
     - lazy-tis100
     - hspec
+    - QuickCheck

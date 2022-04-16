@@ -5,9 +5,9 @@ module LazyTIS100.Parser (
     TileType (..),
     Puzzle (..),
     puzzleParser,
-    --port, instructionSource, instructionTarget, instruction,
+    portParser, instructionSourceParser, instructionTargetParser, instructionParser, labelParser,
     programParser, programsParser,
-    showTISProgram, showTISPrograms
+    showTISInstruction, showTISProgram, showTISPrograms
 ) where
 
 import Prelude hiding (takeWhile)
@@ -110,7 +110,7 @@ puzzleParser = do
             when (T.takeEnd 2 name' /= " -") $ fail "expecting \" -\" after name"
             pure $ T.dropEnd 2 name'
         descriptionBulletPoint = do
-            string "> "
+            void $ string "> "
             firstLine <- takeWhile1 (not . isEndOfLine)
             continued <- many (endOfLine *> string "  " *> takeWhile1 (not . isEndOfLine))
             endOfLine
@@ -153,7 +153,8 @@ puzzleParser = do
             in match positions1' streams
 
 
-port :: Parser Port
+port, portParser :: Parser Port
+portParser = port
 port = choice
     [ asciiCI "UP" >> pure UP
     , asciiCI "LEFT" >> pure LEFT
@@ -163,7 +164,8 @@ port = choice
     , asciiCI "LAST" >> pure LAST ]
     <?> "port"
 
-instructionSource :: Integral n => Parser (InstructionSource n)
+instructionSource, instructionSourceParser :: Integral n => Parser (InstructionSource n)
+instructionSourceParser = instructionSource
 instructionSource = choice
     [ asciiCI "ACC" >> pure SAcc
     , asciiCI "NIL" >> pure SNil
@@ -172,7 +174,8 @@ instructionSource = choice
     <* skipSpaceInLine
     <?> "source"
 
-instructionTarget :: Parser InstructionTarget
+instructionTarget, instructionTargetParser :: Parser InstructionTarget
+instructionTargetParser = instructionTarget
 instructionTarget = choice
     [ asciiCI "ACC" >> pure TAcc
     , asciiCI "NIL" >> pure TNil
@@ -180,10 +183,12 @@ instructionTarget = choice
     <* skipSpaceInLine
     <?> "target"
 
-label :: Parser Text
+label, labelParser :: Parser Text
+labelParser = label
 label = T.pack <$> (many1 (letter <|> digit) <* skipSpaceInLine <?> "label")
 
-instruction :: Integral n => Parser (Instruction Text n)
+instruction, instructionParser :: Integral n => Parser (Instruction Text n)
+instructionParser = instruction
 instruction = choice
     [ asciiCI "JMP" *> skipSpaceInLine *> (JMP <$> label) <?> "JMP"
     , asciiCI "JEZ" *> skipSpaceInLine *> (J JEZ <$> label) <?> "JEZ"
@@ -247,9 +252,13 @@ showT = T.pack . show
 showIntegralT :: Integral a => a -> Text
 showIntegralT = showT . toInteger
 
+showTISInstruction :: (Show l, Show n) => Instruction l n -> Text
+showTISInstruction (J cond lbl) = T.pack $ show cond <> " " <> show lbl
+showTISInstruction x = showT x
+
 showTISProgram :: (Show n, Integral n) => NodeProgram n n -> Text
 showTISProgram prog = T.intercalate "\n" $ map showInstructionWithLabel $ A.assocs prog
-    where showInstructionWithLabel (idx, instr) = (if idx < 10 then "0" else "") <> (showIntegralT idx) <> ": " <> showT instr
+    where showInstructionWithLabel (idx, instr) = (if idx < 10 then "0" else "") <> (showIntegralT idx) <> ": " <> showTISInstruction instr
 
 showTISPrograms :: (Show n, Integral n) => Map.Map n (NodeProgram n n) -> Text
 showTISPrograms progs = T.intercalate "\n\n" $ map showProgramWithIndex $ Map.toAscList progs

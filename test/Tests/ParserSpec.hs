@@ -1,7 +1,8 @@
-{-# LANGUAGE QuasiQuotes, OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes, OverloadedStrings, LambdaCase, NamedFieldPuns, ScopedTypeVariables #-}
 module Tests.ParserSpec (spec) where
 
 import qualified Data.Array as A
+import qualified Data.Bifunctor
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 
@@ -9,9 +10,13 @@ import Data.Attoparsec.Text (parseOnly)
 
 import NeatInterpolation (text)
 import Test.Hspec
+import Test.QuickCheck
 
 import Lib
 import LazyTIS100.Parser
+import Tests.QuickCheckGenerators
+
+import Debug.Trace
 
 p1 = Puzzle "abc" ["xy z","def\nghi","jkl"]
     [ (StreamInput,"X.0",0,const [])
@@ -97,6 +102,8 @@ p1programPrinted = [text|
 parseProgramsToList :: T.Text -> Either String (Map.Map Int [Instruction Int Int])
 parseProgramsToList str = Map.map A.elems <$> parseOnly LazyTIS100.Parser.programsParser str
 
+listArrayFromZero :: (Integral a, A.Ix a) => [b] -> A.Array a b
+listArrayFromZero xs = A.listArray (0, fromInteger $ toInteger $ length xs - 1) xs
 
 spec :: Spec
 spec = do
@@ -112,3 +119,22 @@ spec = do
         let programsAsArrays = Map.map (\xs -> A.listArray (0, length xs - 1) xs) programsAsLists
         it "can be parsed" $ parseProgramsToList p1program `shouldBe` Right programsAsLists
         it "can be converted to text" $ showTISPrograms programsAsArrays `shouldBe` p1programPrinted
+        it "instructions can be round-tripped" $ property prop_InstructionRoundtrip
+
+showT :: Show a => a -> T.Text
+showT = T.pack . show
+
+traceShowIf :: Show a => Bool -> a -> b -> b
+traceShowIf cond msg = if cond then traceShow msg else id
+
+prop_InstructionRoundtrip :: Instruction Int Int -> Bool
+prop_InstructionRoundtrip instr = withTISArbitrary $ let
+    instr2 = showTISInstruction instr
+    instr3 = parseOnly LazyTIS100.Parser.instructionParser instr2
+    instr4 = showTISInstruction <$> instr3
+    ok1 = Right (Data.Bifunctor.first showT instr) == instr3
+    ok2 = Right instr2 == instr4
+    in
+        traceShowIf (not ok1) [Right (Data.Bifunctor.first showT instr), instr3] $
+        traceShowIf (not ok2) [Right instr2, instr4] $
+        ok1 && ok2

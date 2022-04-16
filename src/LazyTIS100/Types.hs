@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections, LambdaCase, GeneralizedNewtypeDeriving,
+{-# LANGUAGE TupleSections, LambdaCase, GeneralizedNewtypeDeriving, DeriveGeneric, DeriveFunctor, DeriveTraversable,
     ScopedTypeVariables #-}
 module LazyTIS100.Types
     ( Port (..),
@@ -30,20 +30,25 @@ import Control.Monad (forM, forM_, void, when)
 
 import qualified Data.Array as A
 import Data.Array (Array, (//))
+import Data.Bifunctor
+import Data.Bifoldable
+import Data.Bitraversable
 import Data.Either (either)
 import Data.Maybe (catMaybes)
 import Data.List (transpose)
 import Debug.Trace
+import Generic.Data (Generic, Generic1, gfmap)
+import Generic.Functor (gbimap, gbifoldMap, gbitraverse)
 
 data Port = UP | LEFT | RIGHT | DOWN | ANY | LAST
-    deriving (Eq, Ord, Enum, Show, Read)
+    deriving (Eq, Ord, Generic, Enum, Bounded, Show, Read)
 
 data JumpCondition = JEZ | JNZ | JGZ | JLZ
-    deriving (Eq, Ord, Enum, Show, Read)
+    deriving (Eq, Ord, Generic, Enum, Bounded, Show, Read)
 data InstructionSource n = SPort Port | SImmediate n | SAcc | SNil
-    deriving (Eq, Ord, Read)
+    deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Read)
 data InstructionTarget = TPort Port | TAcc | TNil
-    deriving (Eq, Ord, Read)
+    deriving (Eq, Ord, Generic, Read)
 data Instruction l n
     = JMP l | J JumpCondition l | JRO (InstructionSource n)
     | MOV (InstructionSource n) InstructionTarget
@@ -51,15 +56,15 @@ data Instruction l n
     | SWP | SAV | NOP
     --NOTE HCF is not reliable in this implementation because of lazy evaluation.
     | HCF
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
 
 type NodeProgram l n = Array Int (Instruction l n)
 data NodeMode n = IDLE | RUN | FINISHED | ONFIRE | READ Port | HasRead n | WRITE Port n | HasWritten
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
 data NodeState n = NodeState { acc :: !n, bak :: !n, lastPort :: !Port, pc :: !Int, mode :: NodeMode n }
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
 data Node l n = BrokenNode | InputNode [n] | OutputNode [n] | ComputeNode (NodeProgram l n) (NodeState n)
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
 type NodeIndex = (Int, Int)
 type Cpu l n = Array NodeIndex (Node l n)
 
@@ -73,6 +78,15 @@ instance Show InstructionTarget where
     show (TPort port) = show port
     show TAcc = "ACC"
     show TNil = "NIL"
+
+instance Bifunctor Instruction where
+    bimap = gbimap
+
+instance Bifoldable Instruction where
+    bifoldMap = gbifoldMap
+
+instance Bitraversable Instruction where
+    bitraverse = gbitraverse
 
 initialNodeState :: NodeState Int
 initialNodeState = NodeState 0 0 LAST 0 IDLE
