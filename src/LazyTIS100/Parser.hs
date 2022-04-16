@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings, RecordWildCards, LambdaCase, NamedFieldPuns, ScopedTypeVariables #-}
 module LazyTIS100.Parser (
     StreamType (..),
     StreamGenerator,
@@ -7,18 +7,21 @@ module LazyTIS100.Parser (
     puzzleParser,
     portParser, instructionSourceParser, instructionTargetParser, instructionParser, labelParser,
     programParser, programsParser,
-    showTISInstruction, showTISProgram, showTISPrograms
+    showTISInstruction, showTISProgram, showTISPrograms,
+    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms, getStream
 ) where
 
 import Prelude hiding (takeWhile)
 
 import Control.Applicative
-import Control.Monad (forM, forM_, void, when)
+import Control.Monad (forM, forM_, void, when, join)
+import qualified Control.Monad.State
 
 import Data.Attoparsec.Text
 
 import qualified Data.Array as A
 import Data.Array (Array, (//))
+import qualified Data.Bits
 import Data.Char (isSpace)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
@@ -263,3 +266,71 @@ showTISProgram prog = T.intercalate "\n" $ map showInstructionWithLabel $ A.asso
 showTISPrograms :: (Show n, Integral n) => Map.Map n (NodeProgram n n) -> Text
 showTISPrograms progs = T.intercalate "\n\n" $ map showProgramWithIndex $ Map.toAscList progs
     where showProgramWithIndex (idx, prog) = "@" <> (showIntegralT idx) <> "\n" <> showTISProgram prog
+
+
+-- like initWithPrograms but with types that are returned by the parsers
+initPuzzleWithPrograms :: forall n. (Integral n, Show n, Eq n) => Puzzle -> Int -> Map.Map n (NodeProgram n n) -> Either String (Cpu n n)
+initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case remainingPrograms of
+    _ | any (==TileMemory) (A.elems puzzleLayout) -> Left "memory nodes are not supported, yet"
+    _ | any isImageStream puzzleStreams -> Left "image streams are not supported, yet"
+    (_:_) -> Left $ "too many programs: " <> show (map fst remainingPrograms)
+    [] -> pure $ A.array ((minInnerY-1, minX), (maxInnerY+1, maxX)) $
+        A.assocs (initStreamNodes StreamInput (minInnerY-1) (InputNode . genStream))
+        <> A.assocs (initStreamNodes StreamOutput (maxInnerY+1) (OutputNode . genStream))
+        <> A.assocs innerNodes
+    where
+        (innerNodes, (_, remainingPrograms)) = Control.Monad.State.runState (traverse initInnerNode puzzleLayout) (0, Map.assocs progs)
+        initInnerNode :: TileType -> Control.Monad.State.State (n, [(n, NodeProgram n n)]) (Node n n)
+        initInnerNode TileDamaged = pure $ BrokenNode
+        initInnerNode TileMemory = error "memory nodes are not supported, yet"
+        initInnerNode TileCompute = Control.Monad.State.get >>= \case
+            (idx, (idx2, prog) : progs') | idx == idx2 -> do
+                Control.Monad.State.put (idx+1, progs')
+                pure $ ComputeNode prog initialNodeState
+            (idx, progs) -> Control.Monad.State.put (idx+1, progs) >> pure emptyComputeNode
+
+        ((minInnerY, minX), (maxInnerY, maxX)) = A.bounds puzzleLayout
+
+        isImageStream (StreamImage, _, _, _) = True
+        isImageStream _ = False
+
+        initStreamNodes stype idx mkStream = A.array ((idx, minX), (idx, maxX)) (defaultValues <> streamNodes)
+            where
+                defaultValues = [((idx, i), BrokenNode) | i <- [minX..maxX]]
+                streamNodes = catMaybes $ map (makeStreamNode stype) puzzleStreams
+                makeStreamNode StreamInput (StreamInput, _, posX, gen) = Just ((idx, posX), mkStream gen)
+                makeStreamNode StreamOutput (StreamOutput, _, posX, gen) = Just ((idx, posX), mkStream gen)
+                makeStreamNode _ _ = Nothing
+        genStream generator = map (fromInteger . toInteger) $ generator seed
+
+parsePuzzleWithPrograms :: forall n. (Integral n, Show n, Eq n) => T.Text -> Int -> T.Text -> Either String (Puzzle, Cpu n n)
+parsePuzzleWithPrograms pzl seed progs = do
+    --join $ initPuzzleWithPrograms <$> parseOnly puzzleParser pzl <*> parseOnly programsParser progs
+    pzl' <- parseOnly puzzleParser pzl
+    progs' <- parseOnly programsParser progs
+    initialCpuState <- initPuzzleWithPrograms pzl' seed progs'
+    pure (pzl', initialCpuState)
+
+getStream :: StreamType -> Text -> Puzzle -> Cpu l n -> Either String [n]
+getStream stype name Puzzle {puzzleStreams, puzzleLayout} cpustate = do
+    posX <- findStream puzzleStreams
+    case (stype, cpustate `at` (posY, posX)) of
+        (StreamInput, Just (InputNode values)) -> Right values
+        (StreamOutput, Just (OutputNode values)) -> Right values
+        (_, Nothing) -> Left "no node at that index"
+        (StreamImage, _) -> Left "images are not supported, yet"
+        _ -> Left "node at that index has an unexpected type"
+    where
+        findStream [] = Left $ "no such " <> show stype <> " " <> show name
+        findStream ((stype2, name2, posX, _) : xs)
+            | stype == stype2 && name == name2 = Right posX
+            | otherwise = findStream xs
+        posY = case stype of
+            StreamInput -> -1
+            _ -> let (_, (maxInnerY, _)) = A.bounds puzzleLayout in maxInnerY+1
+
+        at :: A.Ix i => Array i e -> i -> Maybe e
+        arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
+
+seedForSpecAndTest :: Int -> Int -> Int
+seedForSpecAndTest spec test = (100*spec + test - 1) `mod` (Data.Bits.shift 1 32)

@@ -88,10 +88,10 @@ instance Bifoldable Instruction where
 instance Bitraversable Instruction where
     bitraverse = gbitraverse
 
-initialNodeState :: NodeState Int
+initialNodeState :: Integral n => NodeState n
 initialNodeState = NodeState 0 0 LAST 0 IDLE
 
-emptyComputeNode :: Node l Int
+emptyComputeNode :: Integral n => Node l n
 emptyComputeNode = ComputeNode (A.listArray (0,-1) []) initialNodeState
 
 initWithPrograms :: NodeState n -> Cpu l n -> [[Instruction l n]] -> Either String (Cpu l n)

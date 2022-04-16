@@ -64,4 +64,5 @@ tests:
     dependencies:
     - lazy-tis100
     - hspec
+    - HUnit
     - QuickCheck

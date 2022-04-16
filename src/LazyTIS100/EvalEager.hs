@@ -250,11 +250,11 @@ step :: Cpu Int Int -> (Bool, Cpu Int Int)
 --     so other nodes only see writes in the next step.
 step = stepRun . runTISEvalForCpu_ (foreachNode $ catchSkip stepPrepareReadForNode >> catchSkip stepReadForNode)
 
-stepN :: Cpu Int Int -> Int -> (Int, Cpu Int Int)
-stepN cpu n | n <= 0 = (-1, cpu)
-stepN cpu n = case step cpu of
+stepN :: Int -> Cpu Int Int -> (Int, Cpu Int Int)
+stepN n cpu | n <= 0 = (-1, cpu)
+stepN n cpu = case step cpu of
     (True, cpu') -> (n-1, cpu')
-    (False, cpu') -> stepN cpu' (n-1)
+    (False, cpu') -> stepN (n-1) cpu'
 
 steps :: Cpu Int Int -> [Cpu Int Int]
 steps cpu = cpu : case step cpu of
