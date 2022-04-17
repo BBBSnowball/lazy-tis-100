@@ -120,7 +120,8 @@ instance (Integral l, Integral n, Arbitrary l, Arbitrary n) => Arbitrary (Node l
 
 arbitraryInputNode, arbitraryOutputNode, arbitraryComputeNode :: (Integral l, Integral n, Arbitrary l, Arbitrary n) => Gen (Node l n)
 arbitraryInputNode = InputNode <$> resize 39 (listOf $ arbitraryTISValue)
-arbitraryOutputNode = OutputNode <$> resize 39 (listOf $ arbitraryTISValue)
+arbitraryOutputNode = resize 39 (listOf $ arbitraryTISValue) >>= \expectedValues ->
+    pure $ OutputNode (length expectedValues) expectedValues [] []
 arbitraryComputeNode = fixLabels <$> (ComputeNode <$> arbitrary <*> arbitrary)
 
 fixLabels :: forall l n. Integral l => Node l n -> Node l n

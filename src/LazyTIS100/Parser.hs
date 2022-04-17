@@ -8,7 +8,10 @@ module LazyTIS100.Parser (
     portParser, instructionSourceParser, instructionTargetParser, instructionParser, labelParser,
     programParser, programsParser,
     showTISInstruction, showTISProgram, showTISPrograms,
-    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms, getStreamByPosX, getStream,
+    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms,
+    getInputStreamByPosX, getInputStreamByName, getOutputStreamByPosX, getOutputStreamByName,
+    getOutputStreamActualByName, getOutputStreamActualValues,
+
     parseOnlyReadS, parseOnlyFull
 ) where
 
@@ -288,7 +291,7 @@ initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case re
     (_:_) -> Left $ "too many programs: " <> show (map fst remainingPrograms)
     [] -> pure $ A.array ((minInnerY-1, minX), (maxInnerY+1, maxX)) $
         A.assocs (initStreamNodes StreamInput (minInnerY-1) (InputNode . genStream))
-        <> A.assocs (initStreamNodes StreamOutput (maxInnerY+1) (const $ OutputNode []))
+        <> A.assocs (initStreamNodes StreamOutput (maxInnerY+1) (makeOutputNode . genStream))
         <> A.assocs innerNodes
     where
         (innerNodes, (_, remainingPrograms)) = Control.Monad.State.runState (traverse initInnerNode puzzleLayout) (0, Map.assocs progs)
@@ -314,6 +317,7 @@ initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case re
                 makeStreamNode StreamOutput (StreamOutput, _, posX, gen) = Just ((idx, posX), mkStream gen)
                 makeStreamNode _ _ = Nothing
         genStream generator = map (fromInteger . toInteger) $ generator seed
+        makeOutputNode expected = OutputNode (length expected) expected [] []
 
 parseOnlyFull :: Parser a -> T.Text -> Either String a
 parseOnlyFull p t = do
@@ -322,19 +326,19 @@ parseOnlyFull p t = do
         then pure result
         else Left $ "remaining input: " <> show remaining
 
-parsePuzzleWithPrograms :: forall n. (Integral n, Show n, Eq n) => T.Text -> Int -> T.Text -> Either String (Puzzle, Int, Cpu n n)
+parsePuzzleWithPrograms :: forall n. (Integral n, Show n, Eq n) => T.Text -> Int -> T.Text -> Either String (Puzzle, Cpu n n)
 parsePuzzleWithPrograms pzl seed progs = do
     --join $ initPuzzleWithPrograms <$> parseOnlyFull puzzleParser pzl <*> parseOnlyFull programsParser progs
     pzl' <- parseOnlyFull (puzzleParser <?> "puzzle") pzl
     progs' <- parseOnlyFull (programsParser <?> "programs") progs
     initialCpuState <- initPuzzleWithPrograms pzl' seed progs'
-    pure (pzl', seed, initialCpuState)
+    pure (pzl', initialCpuState)
 
-getStreamByPosX :: StreamType -> Int -> Puzzle -> Cpu l n -> Either String [n]
-getStreamByPosX stype posX Puzzle {puzzleLayout} cpustate =
+getStreamByPosX' :: StreamType -> Int -> Puzzle -> Cpu l n -> Either String (Node l n)
+getStreamByPosX' stype posX Puzzle {puzzleLayout} cpustate =
     case (stype, cpustate `at` (posY, posX)) of
-        (StreamInput, Just (InputNode values)) -> Right values
-        (StreamOutput, Just (OutputNode values)) -> Right values
+        (StreamInput, Just node@(InputNode _)) -> Right node
+        (StreamOutput, Just node@(OutputNode _ _ _ _)) -> Right node
         (_, Nothing) -> Left "no node at that index"
         (StreamImage, _) -> Left "images are not supported, yet"
         _ -> Left "node at that index has an unexpected type"
@@ -346,15 +350,39 @@ getStreamByPosX stype posX Puzzle {puzzleLayout} cpustate =
         at :: A.Ix i => Array i e -> i -> Maybe e
         arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
-getStream :: StreamType -> Text -> Puzzle -> Cpu l n -> Either String [n]
-getStream stype name puzzle@Puzzle {puzzleStreams} cpustate = do
+getStreamByName' :: StreamType -> Text -> Puzzle -> Cpu l n -> Either String (Node l n)
+getStreamByName' stype name puzzle@Puzzle {puzzleStreams} cpustate = do
     posX <- findStream puzzleStreams
-    getStreamByPosX stype posX puzzle cpustate
+    getStreamByPosX' stype posX puzzle cpustate
     where
         findStream [] = Left $ "no such " <> show stype <> " " <> show name
         findStream ((stype2, name2, posX, _) : xs)
             | stype == stype2 && name == name2 = Right posX
             | otherwise = findStream xs
+
+getInputStreamByPosX :: Int -> Puzzle -> Cpu l n -> Either String [n]
+getInputStreamByPosX posX puzzle cpustate = getStreamByPosX' StreamInput posX puzzle cpustate >>= getInputStreamValues
+
+getInputStreamByName :: Text -> Puzzle -> Cpu l n -> Either String [n]
+getInputStreamByName name puzzle cpustate = getStreamByName' StreamInput name puzzle cpustate >>= getInputStreamValues
+
+getInputStreamValues (InputNode xs) = Right xs
+getInputStreamValues _ = Left "node at that index has an unexpected type"
+
+getOutputStreamByPosX :: Int -> Puzzle -> Cpu l n -> Either String (Node l n)
+getOutputStreamByPosX posX puzzle cpustate = getStreamByPosX' StreamOutput posX puzzle cpustate
+
+getOutputStreamByName :: Text -> Puzzle -> Cpu l n -> Either String (Node l n)
+getOutputStreamByName name puzzle cpustate = getStreamByName' StreamOutput name puzzle cpustate
+
+getOutputStreamActualByPosX :: Int -> Puzzle -> Cpu l n -> Either String [n]
+getOutputStreamActualByPosX posX puzzle cpustate = getStreamByPosX' StreamOutput posX puzzle cpustate >>= getOutputStreamActualValues
+
+getOutputStreamActualByName :: Text -> Puzzle -> Cpu l n -> Either String [n]
+getOutputStreamActualByName name puzzle cpustate = getStreamByName' StreamOutput name puzzle cpustate >>= getOutputStreamActualValues
+
+getOutputStreamActualValues (OutputNode {outputNodeActual}) = Right outputNodeActual
+getOutputStreamActualValues _ = Left "node at that index has an unexpected type"
 
 seedForSpecAndTest :: Int -> Int -> Int
 seedForSpecAndTest spec test = (100*spec + test - 1) `mod` (Data.Bits.shift 1 32)

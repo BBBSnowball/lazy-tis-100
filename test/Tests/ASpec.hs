@@ -17,7 +17,7 @@ scratch_useg0_layout = A.listArray ((0,1),(4,4))
     , emptyComputeNode, emptyComputeNode, emptyComputeNode, emptyComputeNode
     , emptyComputeNode, emptyComputeNode, emptyComputeNode, emptyComputeNode
     , emptyComputeNode, emptyComputeNode, emptyComputeNode, emptyComputeNode
-    , BrokenNode, BrokenNode, OutputNode [], BrokenNode ]
+    , BrokenNode, BrokenNode, OutputNode 39 [] [] [], BrokenNode ]
 
 scratch_useg0_1 :: Cpu l Int
 scratch_useg0_1 = either error id $ initWithPrograms initialNodeState scratch_useg0_layout

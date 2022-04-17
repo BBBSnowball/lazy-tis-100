@@ -12,6 +12,7 @@ module LazyTIS100.Types
       NodeIndex,
       NodeProgram,
       Cpu,
+      defaultOutputNodeCapacity,
       initialNodeState,
       emptyComputeNode,
       initWithPrograms,
@@ -63,7 +64,9 @@ data NodeMode n = IDLE | RUN | FINISHED | ONFIRE | READ Port | HasRead n | WRITE
     deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
 data NodeState n = NodeState { acc :: !n, bak :: !n, lastPort :: !Port, pc :: !Int, mode :: NodeMode n }
     deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
-data Node l n = BrokenNode | InputNode [n] | OutputNode [n] | ComputeNode (NodeProgram l n) (NodeState n)
+data Node l n = BrokenNode | InputNode [n]
+    | OutputNode { outputNodeCapacity :: Int, outputNodeExpectedFuture :: [n], outputNodeExpectedPast :: [n], outputNodeActual :: [n] }
+    | ComputeNode (NodeProgram l n) (NodeState n)
     deriving (Eq, Ord, Generic, Generic1, Functor, Foldable, Traversable, Show, Read)
 type NodeIndex = (Int, Int)
 type Cpu l n = Array NodeIndex (Node l n)
@@ -87,6 +90,9 @@ instance Bifoldable Instruction where
 
 instance Bitraversable Instruction where
     bitraverse = gbitraverse
+
+defaultOutputNodeCapacity :: Integral n => n
+defaultOutputNodeCapacity = 39
 
 initialNodeState :: Integral n => NodeState n
 initialNodeState = NodeState 0 0 LAST 0 IDLE
@@ -145,7 +151,7 @@ nodeToStrings :: Node Int Int -> [String]
 nodeToStrings BrokenNode = replicate 15 (replicate 18 '.' ++ "    ")
 nodeToStrings (InputNode xs) = (++ [padLine "  \\/"]) $ take 14 $ reverse (map formatItem xs) ++ repeat (replicate 18 '-' ++ "    ")
     where formatItem x = padLine $ show x
-nodeToStrings (OutputNode xs) = ([padLine "  \\/"] ++) $ take 14 $ map formatItem xs ++ repeat (replicate 18 '-' ++ "    ")
+nodeToStrings (OutputNode _ xs _ _) = ([padLine "  \\/"] ++) $ take 14 $ map formatItem xs ++ repeat (replicate 18 '-' ++ "    ")
     where formatItem x = padLine $ show x
 nodeToStrings (ComputeNode prog NodeState {mode=FINISHED}) | A.bounds prog == (0, -1) =
     [padLine "---"] ++ replicate 14 (replicate 18 ' ' ++ "    ")

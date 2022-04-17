@@ -62,7 +62,7 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
             header = text' defAttr ("IN." <> name <> " ") <-> text defAttr "+----+  "
             footer = text defAttr "+----+"
             initialNums = fromMaybe [] $ Map.lookup (StreamInput, posX) initialStreams
-            nums = case getStreamByPosX StreamInput posX puzzle cpustate of
+            nums = case getInputStreamByPosX posX puzzle cpustate of
                 Left _ -> text' defAttr "|" <|> text' (defAttr `withForeColor` red) "n/a" <|> text' defAttr "|"
                 Right xs -> let
                     numInitial = length initialNums - length xs
@@ -101,9 +101,10 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
             header = text' defAttr ("OUT." <> name <> " ") <-> text defAttr "+----+----+  "
             footer = text defAttr "+----+----+"
             expectedNums = fromMaybe [] $ Map.lookup (StreamOutput, posX) initialStreams
-            nums = case getStreamByPosX StreamOutput posX puzzle cpustate of
-                Left _ -> text' defAttr "|" <|> text' (defAttr `withForeColor` red) "   n/a   " <|> text' defAttr "|"
-                Right xs -> vertCat $ map formatNumberInOutputStream $ padZip expectedNums (reverse xs)
+            nums = case getOutputStreamByPosX posX puzzle cpustate of
+                Right (OutputNode {outputNodeActual}) ->
+                    vertCat $ map formatNumberInOutputStream $ padZip expectedNums (reverse outputNodeActual)
+                _ -> text' defAttr "|" <|> text' (defAttr `withForeColor` red) "   n/a   " <|> text' defAttr "|"
     renderOutputStream _ = pure ()
 
     formatNumberInOutputStream (Nothing, Nothing) = emptyImage
@@ -145,7 +146,8 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
             value = padRight 1 $ case xs of
                 [] -> text' defAttr "    "
                 (x : _) -> text' defAttr $ formatNumber x
-    renderNode (y, x) (OutputNode xs) = name <|> arrow <|> value
+    renderNode (y, x) (OutputNode {outputNodeActual}) =
+        name <|> arrow <|> value
         where
             findName [] = "OUT"
             findName ((StreamOutput, name, posX, _) : xs)
@@ -156,7 +158,7 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
 
             arrow = padRight 1 $ text' defAttr "||" <-> text' defAttr "\\/"
 
-            value = padRight 2 $ case xs of
+            value = padRight 2 $ case outputNodeActual of
                 [] -> text' defAttr "    "
                 (x : _) -> text' defAttr $ formatNumber x
     renderNode (y, x) BrokenNode
@@ -207,17 +209,20 @@ stepForward st@DebugState {stepnum, done=False, cpustate=prevStates@(cpustate : 
     in st { stepnum = stepnum+1, done, cpustate = cpustate' : prevStates }
 stepForward st = st
 
-debugTIS :: Either String (Puzzle, Int, Cpu Int Int) -> IO ()
+debugTIS :: Either String (Puzzle, Cpu Int Int) -> IO ()
 debugTIS (Left msg) = putStrLn $ "Error: " <> msg
-debugTIS (Right (puzzle, seed, initialState)) = do
+debugTIS (Right (puzzle, initialState)) = do
     cfg <- standardIOConfig
     vty <- mkVty cfg
     let initialStreams = execWriter $ mapM_ genInitialStream (puzzleStreams puzzle)
         genInitialStream :: (StreamType, T.Text, Int, StreamGenerator) -> Writer (Map.Map (StreamType, Int) [Int]) ()
-        genInitialStream (stype@StreamInput, _, posX, _) = case getStreamByPosX stype posX puzzle initialState of
+        genInitialStream (stype@StreamInput, _, posX, _) = case getInputStreamByPosX posX puzzle initialState of
             Left _ -> pure ()
             Right xs -> tell $ Map.singleton (stype, posX) xs
-        genInitialStream (stype, _, posX, gen) = tell $ Map.singleton (stype, posX) (gen seed)
+        genInitialStream (stype@StreamOutput, _, posX, _) = case getOutputStreamByPosX posX puzzle initialState of
+            Right (OutputNode {outputNodeExpectedFuture}) -> tell $ Map.singleton (stype, posX) outputNodeExpectedFuture
+            _ -> pure ()
+        genInitialStream (stype@StreamImage, _, posX, gen) = pure ()
 
         state0 = DebugState { stepnum = 0, done = False, puzzle, cpustate = [initialState], initialStreams}
         go lastEvent state = do

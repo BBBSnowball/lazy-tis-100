@@ -75,14 +75,14 @@ assertLengthEqual label expected xs = assertEqual (label <> ": " <> show xs) exp
 spec :: Spec
 spec = describe "Puzzle 00150: SELF-TEST DIAGNOSTIC" $ do
     it "can be parsed" $ second (const ()) startingStateParsed == Right ()
-    let Right (puzzle, _seed, startingState) = startingStateParsed
+    let Right (puzzle, startingState) = startingStateParsed
     let (unusedSteps, cpustate) = stepN 100 startingState
-    let inputX0 = getStream StreamInput "X" puzzle startingState
-    let inputA0 = getStream StreamInput "A" puzzle startingState
-    let inputX = getStream StreamInput "X" puzzle cpustate
-    let inputA = getStream StreamInput "A" puzzle cpustate
-    let outputX = getStream StreamOutput "X" puzzle cpustate
-    let outputA = getStream StreamOutput "A" puzzle cpustate
+    let inputX0 = getInputStreamByName "X" puzzle startingState
+    let inputA0 = getInputStreamByName "A" puzzle startingState
+    let inputX = getInputStreamByName "X" puzzle cpustate
+    let inputA = getInputStreamByName "A" puzzle cpustate
+    let outputX = getOutputStreamActualByName "X" puzzle cpustate
+    let outputA = getOutputStreamActualByName "A" puzzle cpustate
     it "finishes in under 100 steps" $ unusedSteps >= 0
     it "finishes in exactly 83 steps" $ assertEqual "" 83 (100 - unusedSteps)
     it "starts with 39 items in both input streams" $ do

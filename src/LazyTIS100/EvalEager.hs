@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections, LambdaCase, GeneralizedNewtypeDeriving,
     MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, FlexibleContexts,
-    ScopedTypeVariables #-}
+    ScopedTypeVariables, NamedFieldPuns #-}
 module LazyTIS100.EvalEager
     ( portOrderReadAny,
       step,
@@ -164,9 +164,18 @@ stepReadForNode = getCurrentNode >>= \case
         ComputeNode prog state@(NodeState {mode = READ port}) -> do
             Just (actualPort, value) <- tryRead (lastPort state) port
             updateCurrentNode (ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state})
-        (OutputNode xs) -> do
-            Just (actualPort, value) <- tryRead UP UP
-            updateCurrentNode $ OutputNode (value : xs)
+        (OutputNode {outputNodeCapacity, outputNodeExpectedFuture, outputNodeExpectedPast, outputNodeActual})
+            | outputNodeCapacity > 0 -> do
+                Just (actualPort, value) <- tryRead UP UP
+                let (expectedFuture, expectedPast) =
+                        case outputNodeExpectedFuture of
+                            (x : xs) -> (xs, x : outputNodeExpectedPast)
+                            [] -> (outputNodeExpectedFuture, outputNodeExpectedPast)
+                updateCurrentNode $ OutputNode
+                    { outputNodeCapacity = outputNodeCapacity - 1
+                    , outputNodeExpectedFuture = expectedFuture
+                    , outputNodeExpectedPast = expectedPast
+                    , outputNodeActual = value : outputNodeActual }
         _ -> pure ()
 
 saturate :: Ord i => (i, i) -> i -> i
