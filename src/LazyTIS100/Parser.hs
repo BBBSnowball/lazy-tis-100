@@ -209,15 +209,15 @@ instruction = choice
     , asciiCI "SAV" *> skipSpaceInLine *> pure SAV <?> "SAV"
     , asciiCI "NOP" *> skipSpaceInLine *> pure NOP <?> "NOP"
     , asciiCI "HCF" *> skipSpaceInLine *> pure HCF <?> "HCF"
-    ]
+    ] <* optComment
     where
         optComma = option "" (string ",") >> skipSpaceInLine
 
 programParser :: Integral n => Parser (NodeProgram n n)
 programParser = do
-    skipSpace
-    lines <- programLine `sepBy` endOfLine
-    skipSpace
+    skipSpaceAndComments
+    lines <- programLine `sepBy` (optComment >> endOfLine)
+    skipSpaceAndComments
     let labelToAddr = Map.fromList $ do
         (i, (lbls, _)) <- zip [0..] lines
         lbl <- lbls
@@ -244,6 +244,12 @@ programParser = do
         mapLabel SAV _ = Right $ SAV
         mapLabel NOP _ = Right $ NOP
         mapLabel HCF _ = Right $ HCF
+
+        skipSpaceAndComments = void $ skipSpace `sepBy` comment
+
+comment, optComment :: Parser ()
+comment = void $ char '#' >> skipWhile (/='\n') >> char '\n'
+optComment = option () comment
 
 programsParser :: Integral n => Parser (Map.Map n (NodeProgram n n))
 programsParser = Map.fromList <$> many programWithNum
