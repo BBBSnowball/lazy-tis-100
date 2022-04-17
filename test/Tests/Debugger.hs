@@ -120,17 +120,24 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
                 then text' defAttr actualText
                 else text' (defAttr `withForeColor` red) actualText
 
-    --renderNodes = text' defAttr "TODO" <-> wrap 200 defAttr (showT initialStreams) <-> text' defAttr "" <-> renderNodes2
     renderNodes = renderNodes2
+        -- for debugging the debugger
+        <|> wrap 100 defAttr (showT $ getModes cpustate)
     ((minY, minX), (maxY, maxX)) = A.bounds cpustate
     renderNodes2 = vertCat $ flip map [minY..maxY] $ \y -> horizCat $ flip map [minX..maxX] $ \x ->
-        padRight 2 $ renderNode (y, x) (cpustate A.! (y, x))
+        let node = cpustate A.! (y, x)
+            nodeRight = cpustate `at` (y, x+1)
+            nodeDown = cpustate `at` (y+1, x)
+        in addInterNodeRight node nodeRight $ addInterNodeDown node nodeDown $ renderNode (y, x) (cpustate A.! (y, x))
 
     padRight x = pad 0 0 x 0
-    padBottom x = pad 0 0 0 x
+    _padBottom x = pad 0 0 0 x
 
     nodeWidth = 26
     nodeHeight = 17
+
+    at :: A.Ix i => A.Array i e -> i -> Maybe e
+    arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
     renderNode (y, x) (InputNode xs) = name <|> arrow <|> value
         where
@@ -158,13 +165,16 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
 
             arrow = padRight 1 $ text' defAttr "||" <-> text' defAttr "\\/"
 
-            value = padRight 2 $ case outputNodeActual of
-                [] -> text' defAttr "    "
-                (x : _) -> text' defAttr $ formatNumber x
+            writtenValue = case cpustate `at` (y-1, x) of
+                Just (ComputeNode _ state) -> maybeGetWrittenValue state DOWN
+                _ -> Nothing
+            value = padRight 2 $ case writtenValue of
+                Nothing -> text' defAttr "    "
+                Just x -> text' defAttr $ formatNumber x
     renderNode (y, x) BrokenNode
         | y == minY || y == maxY = resize nodeWidth 1 $ emptyImage
-        | otherwise = padBottom 1 $ vertCat $ replicate nodeHeight $ string (defAttr `withForeColor` blue) $ replicate nodeWidth 'X'
-    renderNode (y, x) (ComputeNode prog state) = padBottom 1 $ borderTB <-> (prog' <|> regs) <-> borderTB
+        | otherwise = vertCat $ replicate nodeHeight $ string (defAttr `withForeColor` blue) $ replicate nodeWidth 'X'
+    renderNode (y, x) (ComputeNode prog state) = borderTB <-> (prog' <|> regs) <-> borderTB
         where
         borderTB = text' defAttr "+-------------------+----+"
         border = text' defAttr "|"
@@ -198,6 +208,40 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
         showMode (HasRead _) = "READ"
         showMode (WRITE _ _) = "WRTE"
         showMode HasWritten = "WRTE"
+
+    maybeGetWrittenValue NodeState {mode=WRITE dir1 x} dir2 | dir1 == dir2 = Just x
+    maybeGetWrittenValue NodeState {mode=WRITE ANY x} _ = Just x
+    maybeGetWrittenValue NodeState {mode=WRITE LAST x, lastPort=dir1} dir2 | dir1 == dir2 = Just x
+    maybeGetWrittenValue _ _ = Nothing
+
+    isReading NodeState {mode=READ dir1} dir2 | dir1 == dir2 = True
+    isReading NodeState {mode=READ ANY} _ = True
+    isReading NodeState {mode=READ LAST, lastPort=dir1} dir2 | dir1 == dir2 = True
+    isReading _ _ = False
+
+    addInterNodeRight node Nothing renderedNode = renderedNode
+    addInterNodeRight (ComputeNode _ state1) (Just (ComputeNode _ state2)) renderedNode =
+        renderedNode <|> comm
+        where
+            comm = emptyLines 5
+                <-> text defAttr " -> " <-> formatComm LEFT RIGHT state1 state2 <-> emptyLines 3
+                <-> text defAttr " <- " <-> formatComm RIGHT LEFT state2 state1
+            emptyLines n = resize 1 n emptyImage
+    addInterNodeRight node nodeRight renderedNode = padRight 4 renderedNode
+
+    formatComm dir1 dir2 state1 state2 = case maybeGetWrittenValue state1 dir2 of
+        Just x -> text' defAttr (formatNumber x)
+        Nothing -> if isReading state2 dir1
+            then text' defAttr " ?? "
+            else text' defAttr "    "
+
+    addInterNodeDown node Nothing renderedNode = renderedNode
+    addInterNodeDown (ComputeNode _ state1) (Just (ComputeNode _ state2)) renderedNode =
+        renderedNode <-> comm
+        where
+            comm = text defAttr "     /\\         ||" <|> formatComm UP DOWN state1 state2
+                <-> text defAttr "     || " <|> formatComm DOWN UP state2 state1 <|> text defAttr "    \\/"
+    addInterNodeDown node nodeDown renderedNode = renderedNode
 
 stepBack :: DebugState -> DebugState
 stepBack st@DebugState {stepnum, cpustate=(_ : prev@(_:_))} = st { stepnum = stepnum-1, done = False, cpustate = prev }

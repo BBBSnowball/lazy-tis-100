@@ -255,7 +255,7 @@ programParser = do
         skipSpaceAndComments = void $ skipSpace `sepBy` comment
 
 comment, optComment :: Parser ()
-comment = void $ char '#' >> skipWhile (/='\n') >> char '\n'
+comment = void $ char '#' >> skipWhile (/='\n') >> (endOfLine <|> endOfInput)
 optComment = option () comment
 
 programsParser :: Integral n => Parser (Map.Map n (NodeProgram n n))
