@@ -284,7 +284,7 @@ initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case re
     (_:_) -> Left $ "too many programs: " <> show (map fst remainingPrograms)
     [] -> pure $ A.array ((minInnerY-1, minX), (maxInnerY+1, maxX)) $
         A.assocs (initStreamNodes StreamInput (minInnerY-1) (InputNode . genStream))
-        <> A.assocs (initStreamNodes StreamOutput (maxInnerY+1) (OutputNode . genStream))
+        <> A.assocs (initStreamNodes StreamOutput (maxInnerY+1) (const $ OutputNode []))
         <> A.assocs innerNodes
     where
         (innerNodes, (_, remainingPrograms)) = Control.Monad.State.runState (traverse initInnerNode puzzleLayout) (0, Map.assocs progs)
