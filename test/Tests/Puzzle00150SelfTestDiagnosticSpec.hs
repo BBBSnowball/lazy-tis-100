@@ -74,7 +74,7 @@ assertLengthEqual label expected xs = assertEqual (label <> ": " <> show xs) exp
 
 spec :: Spec
 spec = describe "Puzzle 00150: SELF-TEST DIAGNOSTIC" $ do
-    it "can be parsed" $ second (const ()) startingStateParsed == Right ()
+    it "can be parsed" $ assertEqual "" (Right ()) (second (const ()) startingStateParsed)
     let Right (puzzle, startingState) = startingStateParsed
     let (unusedSteps, cpustate) = stepN 100 startingState
     let inputX0 = getInputStreamByName "X" puzzle startingState

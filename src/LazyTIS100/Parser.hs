@@ -235,7 +235,11 @@ programParser = do
     pure $ A.listArray (0, length insts - 1) insts
     where
         optBreakpoint = option "" (string "!") >> skipSpaceInLine
-        programLine = (,) <$> many (try $ optBreakpoint *> label <* ":" <* skipSpace) <*> (optBreakpoint *> instruction)
+        programLine = do
+            skipSpaceAndComments 
+            labels <- many (try $ optBreakpoint *> label <* ":" <* skipSpaceAndComments)
+            instr <- optBreakpoint *> instruction
+            pure (labels, instr)
         mapLabel (JMP lbl) m = case Map.lookup lbl m of
             Nothing -> Left lbl
             Just lbl' -> Right $ JMP lbl'
