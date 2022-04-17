@@ -73,6 +73,7 @@ test-suite lazy-tis100-test
   main-is: Spec.hs
   other-modules:
       Tests.ASpec
+      Tests.Debugger
       Tests.ParserSpec
       Tests.Puzzle00150SelfTestDiagnosticSpec
       Tests.QuickCheckGenerators
@@ -95,4 +96,5 @@ test-suite lazy-tis100-test
     , neat-interpolation
     , text
     , transformers
+    , vty
   default-language: Haskell2010

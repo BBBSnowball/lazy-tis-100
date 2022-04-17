@@ -14,6 +14,8 @@ import Test.Hspec
 import LazyTIS100.Parser
 import Lib
 
+import Tests.Debugger
+
 layout00150str = [text|
     - 00150: SELF-TEST DIAGNOSTIC -
     IN @0: X
@@ -21,9 +23,13 @@ layout00150str = [text|
         21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39
     IN @3: A
         51, 62, 16, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39
+        21, 22, 23, 24, 25, 26, 27, 28, -29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39
     OUT@0: X
+        51, 62, 16, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39
     OUT@3: A
+        51, 62, 16, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        21, 22, 23, 24, 25, 26, 27, 28, -29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39
     ---
     I..I
     cXcc
@@ -70,7 +76,7 @@ assertLengthEqual label expected xs = assertEqual (label <> ": " <> show xs) exp
 spec :: Spec
 spec = describe "Puzzle 00150: SELF-TEST DIAGNOSTIC" $ do
     it "can be parsed" $ second (const ()) startingStateParsed == Right ()
-    let Right (puzzle, startingState) = startingStateParsed
+    let Right (puzzle, _seed, startingState) = startingStateParsed
     let (unusedSteps, cpustate) = stepN 100 startingState
     let inputX0 = getStream StreamInput "X" puzzle startingState
     let inputA0 = getStream StreamInput "A" puzzle startingState
@@ -88,3 +94,5 @@ spec = describe "Puzzle 00150: SELF-TEST DIAGNOSTIC" $ do
         assertEqual "A" (Right []) inputA
     it "outputs the correct items to OUT.X" $ assertEqual "X" inputX0 outputX
     it "outputs the correct items to OUT.A" $ assertEqual "A" inputA0 outputA
+
+debug = debugTIS startingStateParsed
