@@ -4,7 +4,7 @@ module Tests.Puzzle00150SelfTestDiagnosticSpec (spec) where
 import qualified Data.Array as A
 import qualified Data.Text as T
 
-import Data.Attoparsec.Text (parseOnly)
+import Data.Attoparsec.Text (parseOnly, endOfInput)
 import Data.Bifunctor
 
 import NeatInterpolation (text)
@@ -31,7 +31,7 @@ layout00150str = [text|
     cXcc
     O..O
 |]
---layout00150 = parseOnly LazyTIS100.Parser.programsParser layout00150str
+--layout00150 = parseOnly (LazyTIS100.Parser.puzzleParser <* endOfInput) layout00150str
 
 solution00150str = [text|
         @0
@@ -58,7 +58,7 @@ solution00150str = [text|
         @7
         MOV LEFT, DOWN
     |]
---solution00150 = parseOnly LazyTIS100.Parser.programsParser solution00150str
+--solution00150 = parseOnly (LazyTIS100.Parser.programsParser <* endOfInput) solution00150str
 
 startingStateParsed = parsePuzzleWithPrograms layout00150str (seedForSpecAndTest 150 1) solution00150str
 

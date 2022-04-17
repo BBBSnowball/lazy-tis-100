@@ -8,7 +8,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Text.Read
 
-import Data.Attoparsec.Text (parseOnly)
+import Data.Attoparsec.Text (parseOnly, endOfInput)
 
 import NeatInterpolation (text)
 import Test.Hspec
@@ -102,7 +102,7 @@ p1programPrinted = [text|
 
 
 parseProgramsToList :: T.Text -> Either String (Map.Map Int [Instruction Int Int])
-parseProgramsToList str = Map.map A.elems <$> parseOnly LazyTIS100.Parser.programsParser str
+parseProgramsToList str = Map.map A.elems <$> parseOnly (LazyTIS100.Parser.programsParser <* endOfInput) str
 
 listArrayFromZero :: (Integral a, A.Ix a) => [b] -> A.Array a b
 listArrayFromZero xs = A.listArray (0, fromInteger $ toInteger $ length xs - 1) xs
@@ -135,7 +135,7 @@ traceShowIf cond msg = if cond then traceShow msg else id
 prop_InstructionRoundtrip :: Instruction Int Int -> Bool
 prop_InstructionRoundtrip instr = withTISArbitrary $ let
     instr2 = showTISInstruction instr
-    instr3 = parseOnly LazyTIS100.Parser.instructionParser instr2
+    instr3 = parseOnly (LazyTIS100.Parser.instructionParser <* endOfInput) instr2
     instr3' :: Either String (Instruction Int Int)
     instr3' = instr3 >>= Data.Bitraversable.bitraverse parseLabel pure
     parseLabel = Text.Read.readEither . T.unpack

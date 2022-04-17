@@ -86,7 +86,7 @@ instance Show Puzzle where
                         TileDamaged -> "X"
 
 instance Read Puzzle where
-    readsPrec _ x = case parseOnly puzzleParser (T.pack x) of
+    readsPrec _ x = case parseOnly (puzzleParser <* endOfInput) (T.pack x) of
         Left msg -> error msg
         Right x' -> [(x',"")]
 
@@ -104,6 +104,7 @@ puzzleParser = do
 
     streams'  <- matchStreams "input"  streams [StreamInput] inputLine
     streams'' <- matchStreams "output" streams [StreamOutput, StreamImage] outputLine
+    skipSpace
 
     pure $ Puzzle hline description streams tileArray
     where
@@ -129,14 +130,15 @@ puzzleParser = do
         layout = do
             skipSpace >> string "---" >> skipSpaceInLine >> endOfLine <?> "layout separator"
             skipSpace
-            inputLine <- option [] $ ((((string "." >> pure False) <|> (asciiCI "I" >> pure True)) `sepBy` skipSpaceInLine) <* endOfLine <?> "input line")
+            inputLine <- option [] $ ((((string "." >> pure False) <|> (asciiCI "I" >> pure True)) `sepBy` skipSpaceInLine) <* (endOfLine <|> endOfInput) <?> "input line")
             let tileType =
                     ((asciiCI "X" <|> string "-") >> pure TileDamaged)
                     <|> (asciiCI "C" >> pure TileCompute)
                     <|> (asciiCI "M" >> pure TileMemory)
                     <?> "tile type"
-            tileLines <- many1 $ skipSpaceInLine *> ((tileType `sepBy` skipSpaceInLine) <* skipSpaceInLine <* endOfLine <?> "layout line")
-            outputLine <- option [] $ ((((string "." >> pure False) <|> (asciiCI "O" >> pure True)) `sepBy` skipSpaceInLine) <* endOfLine <?> "output line")
+            tileLines <- many1 $ skipSpaceInLine *> ((tileType `sepBy` skipSpaceInLine) <* skipSpaceInLine <* (endOfLine <|> endOfInput) <?> "layout line")
+            outputLine <- option [] $ ((((string "." >> pure False) <|> (asciiCI "O" >> pure True)) `sepBy` skipSpaceInLine) <* (endOfLine <|> endOfInput) <?> "output line")
+            skipSpace
 
             let width = Prelude.maximum $ length inputLine : length outputLine : map length tileLines
             let height = length tileLines
