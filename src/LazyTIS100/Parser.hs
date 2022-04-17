@@ -8,7 +8,8 @@ module LazyTIS100.Parser (
     portParser, instructionSourceParser, instructionTargetParser, instructionParser, labelParser,
     programParser, programsParser,
     showTISInstruction, showTISProgram, showTISPrograms,
-    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms, getStreamByPosX, getStream
+    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms, getStreamByPosX, getStream,
+    parseOnlyReadS, parseOnlyFull
 ) where
 
 import Prelude hiding (takeWhile)
@@ -86,9 +87,12 @@ instance Show Puzzle where
                         TileDamaged -> "X"
 
 instance Read Puzzle where
-    readsPrec _ x = case parseOnly (puzzleParser <* endOfInput) (T.pack x) of
+    readsPrec _ = parseOnlyReadS puzzleParser
+
+parseOnlyReadS :: Parser a -> ReadS a
+parseOnlyReadS p x = case parseOnly ((,) <$> p <*> takeText) (T.pack x) of
         Left msg -> error msg
-        Right x' -> [(x',"")]
+        Right (x' ,y) -> [(x', T.unpack y)]
 
 isSpaceInLine c = isSpace c && c /= '\n'
 skipSpaceInLine = skipWhile isSpaceInLine
@@ -311,11 +315,18 @@ initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case re
                 makeStreamNode _ _ = Nothing
         genStream generator = map (fromInteger . toInteger) $ generator seed
 
+parseOnlyFull :: Parser a -> T.Text -> Either String a
+parseOnlyFull p t = do
+    (result, remaining) <- parseOnly ((,) <$> p <*> takeText) t
+    if T.null remaining
+        then pure result
+        else Left $ "remaining input: " <> show remaining
+
 parsePuzzleWithPrograms :: forall n. (Integral n, Show n, Eq n) => T.Text -> Int -> T.Text -> Either String (Puzzle, Int, Cpu n n)
 parsePuzzleWithPrograms pzl seed progs = do
-    --join $ initPuzzleWithPrograms <$> parseOnly (puzzleParser <* endOfInput) pzl <*> parseOnly programsParser progs
-    pzl' <- parseOnly (puzzleParser <* endOfInput <?> "puzzle") pzl
-    progs' <- parseOnly (programsParser <* endOfInput <?> "programs") progs
+    --join $ initPuzzleWithPrograms <$> parseOnlyFull puzzleParser pzl <*> parseOnlyFull programsParser progs
+    pzl' <- parseOnlyFull (puzzleParser <?> "puzzle") pzl
+    progs' <- parseOnlyFull (programsParser <?> "programs") progs
     initialCpuState <- initPuzzleWithPrograms pzl' seed progs'
     pure (pzl', seed, initialCpuState)
 
