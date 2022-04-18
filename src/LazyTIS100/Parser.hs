@@ -30,6 +30,7 @@ import Data.Char (isSpace)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 import Data.Maybe (catMaybes)
+import qualified Data.Sequence as Seq
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -321,7 +322,8 @@ initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case re
                 makeStreamNode StreamOutput (StreamOutput, _, posX, gen) = Just ((idx, posX), mkStream gen)
                 makeStreamNode _ _ = Nothing
         genStream generator = map (fromInteger . toInteger) $ generator seed
-        makeOutputNode expected = OutputNode (length expected) expected [] []
+        makeOutputNode expected = let expectedAsSeq = Seq.fromList expected
+            in OutputNode (Seq.length expectedAsSeq) expectedAsSeq Seq.empty
 
 parseOnlyFull :: Parser a -> T.Text -> Either String a
 parseOnlyFull p t = do
@@ -342,7 +344,7 @@ getStreamByPosX' :: StreamType -> Int -> Puzzle -> Cpu l n -> Either String (Nod
 getStreamByPosX' stype posX Puzzle {puzzleLayout} cpustate =
     case (stype, cpustate `at` (posY, posX)) of
         (StreamInput, Just node@(InputNode _)) -> Right node
-        (StreamOutput, Just node@(OutputNode _ _ _ _)) -> Right node
+        (StreamOutput, Just node@(OutputNode _ _ _)) -> Right node
         (_, Nothing) -> Left "no node at that index"
         (StreamImage, _) -> Left "images are not supported, yet"
         _ -> Left "node at that index has an unexpected type"
@@ -379,10 +381,10 @@ getOutputStreamByPosX posX puzzle cpustate = getStreamByPosX' StreamOutput posX 
 getOutputStreamByName :: Text -> Puzzle -> Cpu l n -> Either String (Node l n)
 getOutputStreamByName name puzzle cpustate = getStreamByName' StreamOutput name puzzle cpustate
 
-getOutputStreamActualByPosX :: Int -> Puzzle -> Cpu l n -> Either String [n]
+getOutputStreamActualByPosX :: Int -> Puzzle -> Cpu l n -> Either String (Seq.Seq n)
 getOutputStreamActualByPosX posX puzzle cpustate = getStreamByPosX' StreamOutput posX puzzle cpustate >>= getOutputStreamActualValues
 
-getOutputStreamActualByName :: Text -> Puzzle -> Cpu l n -> Either String [n]
+getOutputStreamActualByName :: Text -> Puzzle -> Cpu l n -> Either String (Seq.Seq n)
 getOutputStreamActualByName name puzzle cpustate = getStreamByName' StreamOutput name puzzle cpustate >>= getOutputStreamActualValues
 
 getOutputStreamActualValues (OutputNode {outputNodeActual}) = Right outputNodeActual

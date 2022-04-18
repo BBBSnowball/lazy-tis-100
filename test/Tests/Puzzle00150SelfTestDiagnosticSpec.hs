@@ -1,10 +1,11 @@
 {-# LANGUAGE QuasiQuotes, OverloadedStrings #-}
-module Tests.Puzzle00150SelfTestDiagnosticSpec (spec) where
+module Tests.Puzzle00150SelfTestDiagnosticSpec where
 
 import qualified Data.Array as A
 import qualified Data.Text as T
 
 import Data.Bifunctor
+import Data.Foldable (toList)
 
 import NeatInterpolation (text)
 import Test.HUnit
@@ -91,7 +92,7 @@ spec = describe "Puzzle 00150: SELF-TEST DIAGNOSTIC" $ do
     it "drains both input streams" $ do
         assertEqual "X" (Right []) inputX
         assertEqual "A" (Right []) inputA
-    it "outputs the correct items to OUT.X" $ assertEqual "X" inputX0 outputX
-    it "outputs the correct items to OUT.A" $ assertEqual "A" inputA0 outputA
+    it "outputs the correct items to OUT.X" $ assertEqual "X" inputX0 $ fmap toList outputX
+    it "outputs the correct items to OUT.A" $ assertEqual "A" inputA0 $ fmap toList outputA
 
 debug = debugTIS startingStateParsed

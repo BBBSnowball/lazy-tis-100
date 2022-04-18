@@ -23,6 +23,7 @@ import Data.Array (Array, (//))
 import Data.Either (either)
 import Data.Maybe (catMaybes)
 import Data.List (transpose)
+import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 
 import LazyTIS100.Types
@@ -192,19 +193,13 @@ stepReadForNode = getCurrentNode >>= \case
             Just (actualPort, value) <- tryRead (lastPort state) port
             traceM "  read successful"
             updateCurrentNode (ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state})
-        (OutputNode {outputNodeCapacity, outputNodeExpectedFuture, outputNodeExpectedPast, outputNodeActual})
+        (OutputNode {outputNodeCapacity, outputNodeActual})
             | outputNodeCapacity > 0 -> do
                 Just (actualPort, value) <- tryRead UP UP
-                let (expectedFuture, expectedPast) =
-                        case outputNodeExpectedFuture of
-                            (x : xs) -> (xs, x : outputNodeExpectedPast)
-                            [] -> (outputNodeExpectedFuture, outputNodeExpectedPast)
                 traceM "  read successful for output node"
                 updateCurrentNode $ OutputNode
                     { outputNodeCapacity = outputNodeCapacity - 1
-                    , outputNodeExpectedFuture = expectedFuture
-                    , outputNodeExpectedPast = expectedPast
-                    , outputNodeActual = value : outputNodeActual }
+                    , outputNodeActual = outputNodeActual Seq.|> value }
         _ -> pure ()
 
 saturate :: Ord i => (i, i) -> i -> i

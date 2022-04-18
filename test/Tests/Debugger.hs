@@ -6,8 +6,10 @@ import Control.Monad (forM_, mapM_, void)
 import Control.Monad.Writer (Writer, execWriter, tell)
 
 import qualified Data.Array as A
+import qualified Data.Foldable
 import qualified Data.Text as T
 import qualified Data.Map.Strict as Map
+import qualified Data.Sequence as Seq
 
 import Data.Bifunctor
 import Data.Maybe (fromMaybe)
@@ -21,7 +23,7 @@ import Graphics.Vty
 --import Debug.Trace
 
 data DebugState = DebugState { stepnum :: Int, done :: Bool,
-    puzzle :: Puzzle, initialStreams :: Map.Map (StreamType, Int) [Int],
+    puzzle :: Puzzle, initialStreams :: Map.Map (StreamType, Int) (Seq.Seq Int),
     cpustate :: [Cpu Int Int],
     traceMsgs ::[[T.Text]] }
 
@@ -63,12 +65,12 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
         where
             header = text' defAttr ("IN." <> name <> " ") <-> text defAttr "+----+  "
             footer = text defAttr "+----+"
-            initialNums = fromMaybe [] $ Map.lookup (StreamInput, posX) initialStreams
+            initialNums = fromMaybe Seq.empty $ Map.lookup (StreamInput, posX) initialStreams
             nums = case getInputStreamByPosX posX puzzle cpustate of
                 Left _ -> text' defAttr "|" <|> text' (defAttr `withForeColor` red) "n/a" <|> text' defAttr "|"
                 Right xs -> let
                     numInitial = length initialNums - length xs
-                    alreadyUsed = vertCat $ map (formatNumberInInputStream False) (take numInitial initialNums)
+                    alreadyUsed = vertCat $ map (formatNumberInInputStream False) (Data.Foldable.toList $ Seq.take numInitial initialNums)
                     notYetUsed = vertCat $ map (uncurry formatNumberInInputStream) $ zip (True : repeat False) xs
                     in alreadyUsed <-> notYetUsed
     renderInputStream _ = pure ()
@@ -102,10 +104,10 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
         where
             header = text' defAttr ("OUT." <> name <> " ") <-> text defAttr "+----+----+  "
             footer = text defAttr "+----+----+"
-            expectedNums = fromMaybe [] $ Map.lookup (StreamOutput, posX) initialStreams
+            expectedNums = fromMaybe Seq.empty $ Map.lookup (StreamOutput, posX) initialStreams
             nums = case getOutputStreamByPosX posX puzzle cpustate of
                 Right (OutputNode {outputNodeActual}) ->
-                    vertCat $ map formatNumberInOutputStream $ padZip expectedNums (reverse outputNodeActual)
+                    vertCat $ map formatNumberInOutputStream $ padZip (Data.Foldable.toList expectedNums) (Data.Foldable.toList outputNodeActual)
                 _ -> text' defAttr "|" <|> text' (defAttr `withForeColor` red) "   n/a   " <|> text' defAttr "|"
     renderOutputStream _ = pure ()
 
@@ -267,12 +269,12 @@ debugTIS (Right (puzzle, initialState)) = do
     cfg <- standardIOConfig
     vty <- mkVty cfg
     let initialStreams = execWriter $ mapM_ genInitialStream (puzzleStreams puzzle)
-        genInitialStream :: (StreamType, T.Text, Int, StreamGenerator) -> Writer (Map.Map (StreamType, Int) [Int]) ()
+        genInitialStream :: (StreamType, T.Text, Int, StreamGenerator) -> Writer (Map.Map (StreamType, Int) (Seq.Seq Int)) ()
         genInitialStream (stype@StreamInput, _, posX, _) = case getInputStreamByPosX posX puzzle initialState of
             Left _ -> pure ()
-            Right xs -> tell $ Map.singleton (stype, posX) xs
+            Right xs -> tell $ Map.singleton (stype, posX) (Seq.fromList xs)
         genInitialStream (stype@StreamOutput, _, posX, _) = case getOutputStreamByPosX posX puzzle initialState of
-            Right (OutputNode {outputNodeExpectedFuture}) -> tell $ Map.singleton (stype, posX) outputNodeExpectedFuture
+            Right (OutputNode {outputNodeExpected}) -> tell $ Map.singleton (stype, posX) outputNodeExpected
             _ -> pure ()
         genInitialStream (stype@StreamImage, _, posX, gen) = pure ()
 

@@ -10,6 +10,7 @@ module Tests.QuickCheckGenerators (
 import qualified Data.Array as A
 import qualified Data.Bifunctor
 import qualified Data.Map.Strict as Map
+import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 
 import Test.QuickCheck
@@ -121,7 +122,7 @@ instance (Integral l, Integral n, Arbitrary l, Arbitrary n) => Arbitrary (Node l
 arbitraryInputNode, arbitraryOutputNode, arbitraryComputeNode :: (Integral l, Integral n, Arbitrary l, Arbitrary n) => Gen (Node l n)
 arbitraryInputNode = InputNode <$> resize 39 (listOf $ arbitraryTISValue)
 arbitraryOutputNode = resize 39 (listOf $ arbitraryTISValue) >>= \expectedValues ->
-    pure $ OutputNode (length expectedValues) expectedValues [] []
+    pure $ OutputNode (length expectedValues) (Seq.fromList expectedValues) Seq.empty
 arbitraryComputeNode = fixLabels <$> (ComputeNode <$> arbitrary <*> arbitrary)
 
 fixLabels :: forall l n. Integral l => Node l n -> Node l n
