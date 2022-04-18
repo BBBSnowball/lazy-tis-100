@@ -1,4 +1,4 @@
-module Tests.ASpec (spec) where
+module Tests.SomeSimpleProgramsSpec (spec) where
 
 import qualified Data.Array as A
 import qualified Data.Sequence as Seq

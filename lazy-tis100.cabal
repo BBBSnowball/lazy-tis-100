@@ -74,13 +74,13 @@ test-suite lazy-tis100-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Tests.ASpec
       Tests.Debugger
       Tests.ParserSpec
       Tests.Puzzle00150SelfTestDiagnosticSpec
       Tests.Puzzle10981SignalAmplifierSpec
       Tests.Puzzle20176DifferentialConverterSpec
       Tests.QuickCheckGenerators
+      Tests.SomeSimpleProgramsSpec
       Paths_lazy_tis100
   hs-source-dirs:
       test
