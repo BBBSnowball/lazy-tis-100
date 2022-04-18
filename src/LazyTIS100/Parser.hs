@@ -226,9 +226,9 @@ programParser = do
     lines <- programLine `sepBy` (optComment >> endOfLine)
     skipSpaceAndComments
     let labelToAddr = Map.fromList $ do
-        (i, (lbls, _)) <- zip [0..] lines
-        lbl <- lbls
-        pure (lbl, i)
+            (i, (lbls, _)) <- zip [0..] lines
+            lbl <- lbls
+            pure (lbl, i)
     insts <- forM lines $ \(_, inst) -> case mapLabel inst labelToAddr of
         Left lbl -> fail $ "missing label: " <> T.unpack lbl
         Right inst' -> pure inst'
