@@ -79,6 +79,7 @@ test-suite lazy-tis100-test
       Tests.ParserSpec
       Tests.Puzzle00150SelfTestDiagnosticSpec
       Tests.Puzzle10981SignalAmplifierSpec
+      Tests.Puzzle20176DifferentialConverterSpec
       Tests.QuickCheckGenerators
       Paths_lazy_tis100
   hs-source-dirs:

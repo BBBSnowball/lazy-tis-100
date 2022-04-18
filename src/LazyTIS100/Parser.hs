@@ -11,6 +11,7 @@ module LazyTIS100.Parser (
     initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms, parsePuzzleWithPrograms',
     getInputStreamByPosX, getInputStreamByName, getOutputStreamByPosX, getOutputStreamByName,
     getOutputStreamActualByName, getOutputStreamActualValues,
+    getOutputStreamExpectedByPosX, getOutputStreamExpectedByName,
     getInputStreamGeneratorByName, setInputStreamGeneratorByName, setOutputStreamExpectedByName,
 
     parseOnlyReadS, parseOnlyFull
@@ -408,6 +409,15 @@ getOutputStreamActualByName name puzzle cpustate = getStreamByName' StreamOutput
 
 getOutputStreamActualValues (OutputNode {outputNodeActual}) = Right outputNodeActual
 getOutputStreamActualValues _ = Left "node at that index has an unexpected type"
+
+getOutputStreamExpectedByPosX :: Int -> Puzzle -> Cpu l n -> Either String (Seq.Seq n)
+getOutputStreamExpectedByPosX posX puzzle cpustate = getStreamByPosX' StreamOutput posX puzzle cpustate >>= getOutputStreamExpectedValues
+
+getOutputStreamExpectedByName :: Text -> Puzzle -> Cpu l n -> Either String (Seq.Seq n)
+getOutputStreamExpectedByName name puzzle cpustate = getStreamByName' StreamOutput name puzzle cpustate >>= getOutputStreamExpectedValues
+
+getOutputStreamExpectedValues (OutputNode {outputNodeExpected}) = Right outputNodeExpected
+getOutputStreamExpectedValues _ = Left "node at that index has an unexpected type"
 
 getInputStreamGeneratorByName :: Text -> Puzzle -> Either String StreamGenerator
 getInputStreamGeneratorByName name puzzle = getPuzzleStreamByName' StreamInput name puzzle >>= \(_, _, _, gen) -> pure gen
