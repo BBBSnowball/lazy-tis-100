@@ -1,15 +1,11 @@
 module Tests.ASpec (spec) where
 
-import Control.Monad (forM, forM_)
 import qualified Data.Array as A
-import Data.Array (Array, (//))
-import Data.Either (either)
-import Data.Maybe (catMaybes)
-import Data.List (transpose)
 import qualified Data.Sequence as Seq
 
 import Test.Hspec
 
+import LazyTIS100.Prelude
 import Lib
 
 scratch_useg0_layout :: Cpu l Int

@@ -27,21 +27,11 @@ module LazyTIS100.Types
       printCpu
     ) where
 
-import Control.Monad (forM, forM_, void, when)
-
 import qualified Data.Array as A
-import Data.Array (Array, (//))
-import Data.Bifunctor
-import Data.Bifoldable
-import Data.Bitraversable
-import Data.Either (either)
-import qualified Data.Foldable
-import Data.Maybe (catMaybes)
-import Data.List (transpose)
 import qualified Data.Sequence as Seq
-import Debug.Trace
-import Generic.Data (Generic, Generic1, gfmap)
-import Generic.Functor (gbimap, gbifoldMap, gbitraverse)
+
+import LazyTIS100.Prelude
+
 
 data Port = UP | LEFT | RIGHT | DOWN | ANY | LAST
     deriving (Eq, Ord, Generic, Enum, Bounded, Show, Read)
@@ -153,7 +143,7 @@ nodeToStrings :: Node Int Int -> [String]
 nodeToStrings BrokenNode = replicate 15 (replicate 18 '.' ++ "    ")
 nodeToStrings (InputNode xs) = (++ [padLine "  \\/"]) $ take 14 $ reverse (map formatItem xs) ++ repeat (replicate 18 '-' ++ "    ")
     where formatItem x = padLine $ show x
-nodeToStrings (OutputNode _ xs _) = ([padLine "  \\/"] ++) $ take 14 $ map formatItem (Data.Foldable.toList xs) ++ repeat (replicate 18 '-' ++ "    ")
+nodeToStrings (OutputNode _ xs _) = ([padLine "  \\/"] ++) $ take 14 $ map formatItem (toList xs) ++ repeat (replicate 18 '-' ++ "    ")
     where formatItem x = padLine $ show x
 nodeToStrings (ComputeNode prog NodeState {mode=FINISHED}) | A.bounds prog == (0, -1) =
     [padLine "---"] ++ replicate 14 (replicate 18 ' ' ++ "    ")

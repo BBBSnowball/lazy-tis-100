@@ -4,13 +4,11 @@ module Tests.Puzzle00150SelfTestDiagnosticSpec where
 import qualified Data.Array as A
 import qualified Data.Text as T
 
-import Data.Bifunctor
-import Data.Foldable (toList)
-
 import NeatInterpolation (text)
 import Test.HUnit
 import Test.Hspec
 
+import LazyTIS100.Prelude
 import LazyTIS100.Parser
 import Lib
 

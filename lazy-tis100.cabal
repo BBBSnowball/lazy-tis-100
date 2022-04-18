@@ -27,6 +27,8 @@ library
   exposed-modules:
       LazyTIS100.EvalEager
       LazyTIS100.Parser
+      LazyTIS100.Prelude
+      LazyTIS100.Trace
       LazyTIS100.Types
       Lib
   other-modules:
@@ -77,7 +79,6 @@ test-suite lazy-tis100-test
       Tests.ParserSpec
       Tests.Puzzle00150SelfTestDiagnosticSpec
       Tests.QuickCheckGenerators
-      Tests.Trace
       Paths_lazy_tis100
   hs-source-dirs:
       test

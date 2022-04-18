@@ -8,13 +8,13 @@ module Tests.QuickCheckGenerators (
 ) where
 
 import qualified Data.Array as A
-import qualified Data.Bifunctor
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 
 import Test.QuickCheck
 
+import LazyTIS100.Prelude
 import LazyTIS100.Types
 import LazyTIS100.Parser
 

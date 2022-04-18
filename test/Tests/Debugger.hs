@@ -1,34 +1,24 @@
 {-# LANGUAGE QuasiQuotes, OverloadedStrings, NamedFieldPuns, TupleSections #-}
 module Tests.Debugger (debugTIS) where
 
-import Control.Exception (finally)
-import Control.Monad (forM_, mapM_, void)
-import Control.Monad.Writer (Writer, execWriter, tell)
-
 import qualified Data.Array as A
 import qualified Data.Foldable
 import qualified Data.Text as T
 import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 
-import Data.Bifunctor
-import Data.Maybe (fromMaybe)
-
+import LazyTIS100.Prelude
 import LazyTIS100.Parser
 import LazyTIS100.EvalEager
 import LazyTIS100.Trace
 import Lib
 
 import Graphics.Vty
---import Debug.Trace
 
 data DebugState = DebugState { stepnum :: Int, done :: Bool,
     puzzle :: Puzzle, initialStreams :: Map.Map (StreamType, Int) (Seq.Seq Int),
     cpustate :: [Cpu Int Int],
     traceMsgs ::[[T.Text]] }
-
-showT :: Show a => a -> T.Text
-showT = T.pack . show
 
 wrap :: Int -> Attr -> T.Text -> Image
 wrap width attr t
@@ -143,9 +133,6 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
 
     nodeWidth = 26
     nodeHeight = 17
-
-    at :: A.Ix i => A.Array i e -> i -> Maybe e
-    arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
     renderNode (y, x) (InputNode xs) = name <|> arrow <|> value
         where

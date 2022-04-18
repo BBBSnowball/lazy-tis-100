@@ -18,22 +18,21 @@ module LazyTIS100.Parser (
 import Prelude hiding (takeWhile)
 
 import Control.Applicative
-import Control.Monad (forM, forM_, void, when, join)
+import Control.Monad (join)
 import qualified Control.Monad.State
 
 import Data.Attoparsec.Text
 
 import qualified Data.Array as A
-import Data.Array (Array, (//))
 import qualified Data.Bits
 import Data.Char (isSpace)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
-import Data.Maybe (catMaybes)
 import qualified Data.Sequence as Seq
 import Data.Text (Text)
 import qualified Data.Text as T
 
+import LazyTIS100.Prelude
 import LazyTIS100.Types hiding (instructionSource, instructionTarget)
 
 data StreamType = StreamInput | StreamOutput | StreamImage
@@ -269,9 +268,6 @@ programsParser = Map.fromList <$> many programWithNum
         programWithNum = (,) <$> (skipSpace *> string "@" *> decimal <* skipSpace) <*> programParser
 
 
-showT :: Show a => a -> Text
-showT = T.pack . show
-
 showIntegralT :: Integral a => a -> Text
 showIntegralT = showT . toInteger
 
@@ -352,9 +348,6 @@ getStreamByPosX' stype posX Puzzle {puzzleLayout} cpustate =
         posY = case stype of
             StreamInput -> -1
             _ -> let (_, (maxInnerY, _)) = A.bounds puzzleLayout in maxInnerY+1
-
-        at :: A.Ix i => Array i e -> i -> Maybe e
-        arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
 getStreamByName' :: StreamType -> Text -> Puzzle -> Cpu l n -> Either String (Node l n)
 getStreamByName' stype name puzzle@Puzzle {puzzleStreams} cpustate = do

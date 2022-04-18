@@ -17,33 +17,32 @@ module LazyTIS100.Trace
     ) where
 
 import Control.Concurrent.MVar
-import Control.Monad (when)
-import qualified Data.Foldable
-import Data.Maybe (fromMaybe)
-import qualified Data.Sequence as SEQ
+import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 import GHC.Stack (currentCallStack, renderStack)
 import System.IO.Unsafe (unsafePerformIO)
 
-traceDataStore :: MVar (Maybe (SEQ.Seq T.Text))
+import LazyTIS100.Prelude
+
+traceDataStore :: MVar (Maybe (Seq.Seq T.Text))
 traceDataStore = unsafePerformIO $ newMVar Nothing
 
 traceIO :: T.Text -> IO ()
 traceIO msg = modifyMVar_ traceDataStore $ \case
   Nothing -> pure Nothing
-  Just seq -> pure $ Just $ seq SEQ.|> msg
+  Just seq -> pure $ Just $ seq Seq.|> msg
 
 clearTrace :: IO ()
-clearTrace = modifyMVar_ traceDataStore $ const $ pure $ Just $ SEQ.empty
+clearTrace = modifyMVar_ traceDataStore $ const $ pure $ Just $ Seq.empty
 
 startTrace :: IO ()
-startTrace = modifyMVar_ traceDataStore $ pure . Just . fromMaybe SEQ.empty
+startTrace = modifyMVar_ traceDataStore $ pure . Just . fromMaybe Seq.empty
 
 getTrace :: IO [T.Text]
-getTrace = Data.Foldable.toList . fromMaybe SEQ.empty <$> readMVar traceDataStore
+getTrace = toList . fromMaybe Seq.empty <$> readMVar traceDataStore
 
 restartTrace :: IO [T.Text]
-restartTrace = modifyMVar traceDataStore $ \x -> pure (Just SEQ.empty, Data.Foldable.toList $ fromMaybe SEQ.empty x)
+restartTrace = modifyMVar traceDataStore $ \x -> pure (Just Seq.empty, toList $ fromMaybe Seq.empty x)
 
 -- http://localhost:8080/file/home/parallels/.stack/programs/aarch64-linux/ghc-9.0.2/share/doc/ghc-9.0.2/html/libraries/base-4.15.1.0/src/Debug-Trace.html#traceId
 -- (without documentation and with some changes, e.g. use Text in some places)

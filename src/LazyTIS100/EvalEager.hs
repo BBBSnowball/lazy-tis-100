@@ -10,22 +10,13 @@ module LazyTIS100.EvalEager
     ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (forM, forM_, void, when)
-import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Except (MonadError, ExceptT, runExceptT, throwError, catchError)
-import Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
 import qualified Control.Monad.Reader
-import Control.Monad.State (MonadState, State, StateT, runStateT, runState)
 import qualified Control.Monad.State
-
 import qualified Data.Array as A
-import Data.Array (Array, (//))
-import Data.Either (either)
-import Data.Maybe (catMaybes)
-import Data.List (transpose)
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 
+import LazyTIS100.Prelude
 import LazyTIS100.Types
 import LazyTIS100.Trace
 
@@ -97,9 +88,6 @@ traceM :: MonadState s m => T.Text -> m ()
 --traceM msg = Control.Monad.State.get >>= \x -> Control.Monad.State.put (trace msg x)
 traceM msg = Control.Monad.State.modify (trace msg)
 
-showT :: Show a => a -> T.Text
-showT = T.pack . show
-
 foreachNode :: Integral n => TISEvalForNode l n () -> TISEval l n ()
 foreachNode action = getCpu >>= \cpu -> forM_ (A.assocs cpu) go
     where
@@ -150,9 +138,6 @@ neighbourIndicesForRead myIndex lastPort port = map (neighbourIndex myIndex) $ a
         applicableNeighbours ANY = portOrderReadAny
         applicableNeighbours LAST = [lastPort]
         applicableNeighbours p = [p]
-
-at :: A.Ix i => Array i e -> i -> Maybe e
-arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
 tryRead :: (Num n, Show n) => Port -> Port -> TISEvalForNode l n (Maybe (Port, n))
 tryRead lastPort port = do

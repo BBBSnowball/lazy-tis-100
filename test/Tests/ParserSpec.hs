@@ -2,8 +2,6 @@
 module Tests.ParserSpec (spec) where
 
 import qualified Data.Array as A
-import qualified Data.Bifunctor
-import qualified Data.Bitraversable
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Text.Read
@@ -12,8 +10,9 @@ import NeatInterpolation (text)
 import Test.Hspec
 import Test.QuickCheck
 
-import Lib
+import LazyTIS100.Prelude
 import LazyTIS100.Parser
+import Lib
 import Tests.QuickCheckGenerators
 
 import Debug.Trace
@@ -121,9 +120,6 @@ spec = do
         it "can be converted to text" $ showTISPrograms programsAsArrays `shouldBe` p1programPrinted
         it "instructions can be round-tripped" $ property prop_InstructionRoundtrip
 
-showT :: Show a => a -> T.Text
-showT = T.pack . show
-
 traceIf :: Bool -> String -> b -> b
 traceIf cond msg = if cond then trace msg else id
 
@@ -135,7 +131,7 @@ prop_InstructionRoundtrip instr = withTISArbitrary $ let
     instr2 = showTISInstruction instr
     instr3 = parseOnlyFull LazyTIS100.Parser.instructionParser instr2
     instr3' :: Either String (Instruction Int Int)
-    instr3' = instr3 >>= Data.Bitraversable.bitraverse parseLabel pure
+    instr3' = instr3 >>= bitraverse parseLabel pure
     parseLabel = Text.Read.readEither . T.unpack
     instr4 = showTISInstruction <$> instr3'
     ok1 = Right instr == instr3'
