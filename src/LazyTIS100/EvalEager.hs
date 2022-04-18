@@ -123,7 +123,11 @@ runTISEvalForCpu_ action cpu = snd $ runState (runExceptT (runTISEval action)) c
 stepPrepareReadForNode :: Show n => TISEvalForNode l n ()
 stepPrepareReadForNode = do
     --NOTE Failed pattern matches will skip processing for this node.
-    ComputeNode prog state <- getCurrentNode
+    ComputeNode prog state@(NodeState {mode}) <- getCurrentNode
+    case mode of
+        WRITE _ _ -> throwError SkipNode  -- don't short-circuit write
+        READ _ -> throwError SkipNode  -- change would be redundant
+        _ -> pure ()
     Just inst <- pure $ prog `at` pc state
     Just (SPort port) <- pure $ instructionSource inst
     traceM $ "  start reading, mode was " <> showT mode
