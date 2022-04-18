@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections, LambdaCase, GeneralizedNewtypeDeriving,
     MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, FlexibleContexts,
-    ScopedTypeVariables, NamedFieldPuns #-}
+    ScopedTypeVariables, NamedFieldPuns, OverloadedStrings #-}
 module LazyTIS100.EvalEager
     ( portOrderReadAny,
       step,
@@ -23,9 +23,10 @@ import Data.Array (Array, (//))
 import Data.Either (either)
 import Data.Maybe (catMaybes)
 import Data.List (transpose)
-import Debug.Trace
+import qualified Data.Text as T
 
 import LazyTIS100.Types
+import LazyTIS100.Trace
 
 
 -- https://kk4ead.github.io/tis-100/
@@ -91,14 +92,26 @@ catchSkip = flip catchError $ \case
     SkipNode -> pure ()
     --e -> throwError e  -- redundant until we have more error types
 
-foreachNode :: TISEvalForNode l n () -> TISEval l n ()
+traceM :: MonadState s m => T.Text -> m ()
+--traceM msg = Control.Monad.State.get >>= \x -> Control.Monad.State.put (trace msg x)
+traceM msg = Control.Monad.State.modify (trace msg)
+
+showT :: Show a => a -> T.Text
+showT = T.pack . show
+
+foreachNode :: Integral n => TISEvalForNode l n () -> TISEval l n ()
 foreachNode action = getCpu >>= \cpu -> forM_ (A.assocs cpu) go
     where
         go (ix, node) =
-            let step1 = runReaderT (runTISEvalForNode $ catchSkip $ action) ix
+            let dotrace = traceM $ "foreachNode: " <> showT ix
+                step1 = runReaderT (runTISEvalForNode $ catchSkip $ dotrace >> action) ix
                 step2 = runStateT step1 (False, node)
             in TISEval step2 >>= \((), (updated, node')) ->
-                when updated $ updateNode ix node'
+                when updated $ do
+                    case node' of
+                        ComputeNode _ NodeState {mode} -> traceM $ "  updated: mode=" <> showT (fmap toInteger mode)
+                        _ -> traceM "  updated"
+                    updateNode ix node'
 
 runTISEvalForCpu :: TISEval l n a -> Cpu l n -> (Either NoEvalReason a, Cpu l n)
 runTISEvalForCpu action cpu = runState (runExceptT (runTISEval action)) cpu
@@ -107,12 +120,13 @@ runTISEvalForCpu_ :: TISEval l n a -> Cpu l n -> Cpu l n
 runTISEvalForCpu_ action cpu = snd $ runState (runExceptT (runTISEval action)) cpu
 
 
-stepPrepareReadForNode :: TISEvalForNode l n ()
+stepPrepareReadForNode :: Show n => TISEvalForNode l n ()
 stepPrepareReadForNode = do
     --NOTE Failed pattern matches will skip processing for this node.
     ComputeNode prog state <- getCurrentNode
     Just inst <- pure $ prog `at` pc state
     Just (SPort port) <- pure $ instructionSource inst
+    traceM $ "  start reading, mode was " <> showT mode
     updateCurrentNode $ ComputeNode prog state { mode = READ port }
 
 neighbourIndex :: NodeIndex -> Port -> (NodeIndex, Port, Port)
@@ -135,10 +149,12 @@ neighbourIndicesForRead myIndex lastPort port = map (neighbourIndex myIndex) $ a
 at :: A.Ix i => Array i e -> i -> Maybe e
 arr `at` ix = if A.inRange (A.bounds arr) ix then Just (arr A.! ix) else Nothing
 
-tryRead :: Num n => Port -> Port -> TISEvalForNode l n (Maybe (Port, n))
+tryRead :: (Num n, Show n) => Port -> Port -> TISEvalForNode l n (Maybe (Port, n))
 tryRead lastPort port = do
     ix <- getCurrentNodeIndex
-    firstJustsM . map tryReadOne $ neighbourIndicesForRead ix lastPort port
+    result <- firstJustsM . map tryReadOne $ neighbourIndicesForRead ix lastPort port
+    traceM $ "  tryRead " <> showT ix <> ": " <> showT result
+    pure result
     where
         firstJustsM :: Monad m => [m (Maybe a)] -> m (Maybe a)
         firstJustsM [] = pure Nothing
@@ -149,20 +165,28 @@ tryRead lastPort port = do
         -- special case: LAST used without preceding ANY is like NIL
         tryReadOne (theirIndex, LAST, LAST) = pure $ Just (LAST, fromInteger 0)
         tryReadOne (theirIndex, myPort, theirPort) = maybeUpdateNode theirIndex $ \case
+            --FIXME I think input nodes also can only write every second cycle. We have to consider this.
             InputNode (v : vs) ->
+                trace ("    tryReadOne " <> showT theirIndex <> ", input") $
                 Just (InputNode vs, (myPort, v))
             ComputeNode prog theirState@(NodeState {mode = WRITE ANY   v}) ->
+                trace ("    tryReadOne " <> showT theirIndex <> ", WRITE ANY") $
                 let node' = ComputeNode prog (theirState {mode = HasWritten, lastPort = theirPort})
                 in Just (node', (myPort, v))
             ComputeNode prog theirState@(NodeState {mode = WRITE port' v}) | port' == theirPort ->
+                trace ("    tryReadOne " <> showT theirIndex <> ", WRITE " <> showT port') $
                 let node' = ComputeNode prog (theirState {mode = HasWritten})
                 in Just (node', (myPort, v))
+            ComputeNode prog theirState@(NodeState {mode}) ->
+                trace ("    tryReadOne " <> showT theirIndex <> ", nope, " <> showT mode) $
+                Nothing
             _ -> Nothing
 
-stepReadForNode :: Num n => TISEvalForNode l n ()
+stepReadForNode :: (Num n, Show n) => TISEvalForNode l n ()
 stepReadForNode = getCurrentNode >>= \case
         ComputeNode prog state@(NodeState {mode = READ port}) -> do
             Just (actualPort, value) <- tryRead (lastPort state) port
+            traceM "  read successful"
             updateCurrentNode (ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state})
         (OutputNode {outputNodeCapacity, outputNodeExpectedFuture, outputNodeExpectedPast, outputNodeActual})
             | outputNodeCapacity > 0 -> do
@@ -171,6 +195,7 @@ stepReadForNode = getCurrentNode >>= \case
                         case outputNodeExpectedFuture of
                             (x : xs) -> (xs, x : outputNodeExpectedPast)
                             [] -> (outputNodeExpectedFuture, outputNodeExpectedPast)
+                traceM "  read successful for output node"
                 updateCurrentNode $ OutputNode
                     { outputNodeCapacity = outputNodeCapacity - 1
                     , outputNodeExpectedFuture = expectedFuture

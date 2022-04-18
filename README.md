@@ -26,3 +26,8 @@ This may also be useful:
 - `nix-shell -p autoPatchelfHook numactl ncurses5 ncurses gmp --run "autoPatchelf /home/parallels/.stack/programs/"`
 - `stack exec -- ghcid -c="stack ghci src/Lib.hs test/Spec.hs" -T="main" --warnings $@ --reload src`
 - `stack ghci src/Lib.hs test/Tests/ASpec.hs src/LazyTIS100/Parser.hs --ghci-options -XOverloadedStrings`
+
+Using x86-64 GHC on M1 (with Debian):
+- `sudo dpkg --add-architecture amd64`
+- `sudo apt update`
+- `sudo apt install libc6:amd64 libgmp-dev:amd64 libncurses5:amd64`

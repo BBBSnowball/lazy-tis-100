@@ -2,7 +2,7 @@
 module Tests.Debugger (debugTIS) where
 
 import Control.Exception (finally)
-import Control.Monad (forM_, mapM_)
+import Control.Monad (forM_, mapM_, void)
 import Control.Monad.Writer (Writer, execWriter, tell)
 
 import qualified Data.Array as A
@@ -14,14 +14,16 @@ import Data.Maybe (fromMaybe)
 
 import LazyTIS100.Parser
 import LazyTIS100.EvalEager
+import LazyTIS100.Trace
 import Lib
 
 import Graphics.Vty
-import Debug.Trace
+--import Debug.Trace
 
 data DebugState = DebugState { stepnum :: Int, done :: Bool,
     puzzle :: Puzzle, initialStreams :: Map.Map (StreamType, Int) [Int],
-    cpustate :: [Cpu Int Int] }
+    cpustate :: [Cpu Int Int],
+    traceMsgs ::[[T.Text]] }
 
 showT :: Show a => a -> T.Text
 showT = T.pack . show
@@ -45,7 +47,7 @@ renderCpu DebugState {puzzle, cpustate=[]} = line0 <-> line1
     where
     line0 = text' defAttr $ "TIS-100 simulator: " <> puzzleName puzzle
     line1 = text' (defAttr `withForeColor`  red) $ "invalid state"
-renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_} = lines
+renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_, traceMsgs} = lines
     where
     line0 = text' defAttr $ "TIS-100 simulator: " <> puzzleName puzzle
     line1 = text' defAttr "left/right to step, R to restart, q to quit"
@@ -122,7 +124,11 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
 
     renderNodes = renderNodes2
         -- for debugging the debugger
-        <|> wrap 100 defAttr (showT $ getModes cpustate)
+        -- <|> wrap 100 defAttr (showT $ getModes cpustate)
+        <|> ((vertCat $ map (wrap 100 defAttr . showT) $ getModes cpustate) <-> renderTrace)
+
+    renderTrace = vertCat $ map (text' defAttr) $ concat $ take 1 traceMsgs
+
     ((minY, minX), (maxY, maxX)) = A.bounds cpustate
     renderNodes2 = vertCat $ flip map [minY..maxY] $ \y -> horizCat $ flip map [minX..maxX] $ \x ->
         let node = cpustate A.! (y, x)
@@ -244,14 +250,16 @@ renderCpu DebugState {stepnum, done, puzzle, initialStreams, cpustate=cpustate:_
     addInterNodeDown node nodeDown renderedNode = renderedNode
 
 stepBack :: DebugState -> DebugState
-stepBack st@DebugState {stepnum, cpustate=(_ : prev@(_:_))} = st { stepnum = stepnum-1, done = False, cpustate = prev }
+stepBack st@DebugState {stepnum, cpustate=(_ : prev@(_:_)), traceMsgs=(_ : prevtrace@(_:_))} = st { stepnum = stepnum-1, done = False, cpustate = prev, traceMsgs = prevtrace }
 stepBack st = st
 
-stepForward :: DebugState -> DebugState
-stepForward st@DebugState {stepnum, done=False, cpustate=prevStates@(cpustate : _)} = let
-    (done, cpustate') = step cpustate
-    in st { stepnum = stepnum+1, done, cpustate = cpustate' : prevStates }
-stepForward st = st
+stepForward :: DebugState -> IO DebugState
+stepForward st@DebugState {stepnum, done=False, cpustate=prevStates@(cpustate : _), traceMsgs} = do
+    startTrace
+    let (done, cpustate') = step cpustate
+    newTraceMsgs <- done `seq` cpustate' `seq` restartTrace
+    pure $ st { stepnum = stepnum+1, done, cpustate = cpustate' : prevStates, traceMsgs = newTraceMsgs : traceMsgs }
+stepForward st = pure st
 
 debugTIS :: Either String (Puzzle, Cpu Int Int) -> IO ()
 debugTIS (Left msg) = putStrLn $ "Error: " <> msg
@@ -268,7 +276,7 @@ debugTIS (Right (puzzle, initialState)) = do
             _ -> pure ()
         genInitialStream (stype@StreamImage, _, posX, gen) = pure ()
 
-        state0 = DebugState { stepnum = 0, done = False, puzzle, cpustate = [initialState], initialStreams}
+        state0 = DebugState { stepnum = 0, done = False, puzzle, cpustate = [initialState], initialStreams, traceMsgs=[[]]}
         go lastEvent state = do
             let img = renderCpu state <-> string defAttr (show lastEvent)
                 pic = picForImage img
@@ -279,6 +287,6 @@ debugTIS (Right (puzzle, initialState)) = do
                 EvKey (KChar 'q') _ -> pure ()
                 EvKey (KChar 'Q') _ -> pure ()
                 EvKey KLeft [] -> go (Just ev) (stepBack state)
-                EvKey KRight [] -> go (Just ev) (stepForward state)
+                EvKey KRight [] -> go (Just ev) =<< stepForward state
                 _ -> go (Just ev) state
     go Nothing state0 `finally` shutdown vty
