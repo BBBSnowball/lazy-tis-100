@@ -31,6 +31,8 @@ import Data.Bifunctor as E (Bifunctor (..))
 import Data.Bifoldable as E (Bifoldable (..))
 import Data.Bitraversable as E (Bitraversable (..))
 
+import GHC.Stack as E (HasCallStack)
+
 
 showT :: Show a => a -> T.Text
 showT = T.pack . show

@@ -32,6 +32,8 @@ import qualified Data.Sequence as Seq
 import Data.Text (Text)
 import qualified Data.Text as T
 
+import qualified Debug.Trace as Trace
+
 import LazyTIS100.Prelude
 import LazyTIS100.Types hiding (instructionSource, instructionTarget)
 
@@ -110,10 +112,10 @@ puzzleParser = do
     (inputLine, tileArray, outputLine) <- layout <?> "layout"
 
     streams'  <- matchStreams "input"  streams [StreamInput] inputLine
-    streams'' <- matchStreams "output" streams [StreamOutput, StreamImage] outputLine
+    streams'' <- matchStreams "output" streams' [StreamOutput, StreamImage] outputLine
     skipSpace
 
-    pure $ Puzzle hline description streams tileArray
+    pure $ Puzzle hline description streams'' tileArray
     where
         headerline = do
             name <- (string "- " <?> "start") >> takeWhile1 (not . isEndOfLine) <* endOfLine
@@ -309,6 +311,8 @@ initPuzzleWithPrograms Puzzle {puzzleStreams, puzzleLayout} seed progs = case re
 
         isImageStream (StreamImage, _, _, _) = True
         isImageStream _ = False
+
+        --verboseArray bounds assocs = Trace.traceShow bounds $ Trace.traceShow assocs $ A.array bounds assocs
 
         initStreamNodes stype idx mkStream = A.array ((idx, minX), (idx, maxX)) (defaultValues <> streamNodes)
             where
