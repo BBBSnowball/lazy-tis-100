@@ -193,11 +193,11 @@ stepReadForNode = getCurrentNode >>= \case
             Just (actualPort, value) <- tryRead (lastPort state) port
             traceM "  read successful"
             updateCurrentNode (ComputeNode prog state {mode = HasRead value, lastPort = if port == ANY then actualPort else lastPort state})
-        (OutputNode {outputNodeCapacity, outputNodeActual})
+        node@(OutputNode {outputNodeCapacity, outputNodeActual})
             | outputNodeCapacity > 0 -> do
                 Just (actualPort, value) <- tryRead UP UP
                 traceM "  read successful for output node"
-                updateCurrentNode $ OutputNode
+                updateCurrentNode $ node
                     { outputNodeCapacity = outputNodeCapacity - 1
                     , outputNodeActual = outputNodeActual Seq.|> value }
         _ -> pure ()
