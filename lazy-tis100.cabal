@@ -6,9 +6,9 @@ cabal-version: 1.12
 
 name:           lazy-tis100
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/lazy-tis100#readme>
-homepage:       https://github.com/githubuser/lazy-tis100#readme
-bug-reports:    https://github.com/githubuser/lazy-tis100/issues
+description:    Please see the README on GitHub at <https://github.com/BBBSnowball/lazy-tis-100#readme>
+homepage:       https://github.com/BBBSnowball/lazy-tis-100#readme
+bug-reports:    https://github.com/BBBSnowball/lazy-tis-100/issues
 author:         Benjamin Koch
 maintainer:     example@example.com
 copyright:      2022 Benjamin Koch
@@ -21,7 +21,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/lazy-tis100
+  location: https://github.com/BBBSnowball/lazy-tis-100
 
 library
   exposed-modules:
@@ -35,7 +35,7 @@ library
       Paths_lazy_tis100
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing -Wno-unused-matches -Wno-missing-signatures -Wno-unused-top-binds
+  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing -Wno-unused-matches -Wno-missing-signatures -Wno-unused-top-binds -Wno-missed-extra-shared-lib
   build-depends:
       array
     , attoparsec
@@ -55,7 +55,7 @@ executable lazy-tis100-exe
       Paths_lazy_tis100
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing -Wno-unused-matches -Wno-missing-signatures -Wno-unused-top-binds -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing -Wno-unused-matches -Wno-missing-signatures -Wno-unused-top-binds -Wno-missed-extra-shared-lib -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       array
     , attoparsec
@@ -78,11 +78,12 @@ test-suite lazy-tis100-test
       Tests.Debugger
       Tests.ParserSpec
       Tests.Puzzle00150SelfTestDiagnosticSpec
+      Tests.Puzzle10981SignalAmplifierSpec
       Tests.QuickCheckGenerators
       Paths_lazy_tis100
   hs-source-dirs:
       test
-  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing -Wno-unused-matches -Wno-missing-signatures -Wno-unused-top-binds -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unused-imports -Wno-name-shadowing -Wno-unused-matches -Wno-missing-signatures -Wno-unused-top-binds -Wno-missed-extra-shared-lib -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       HUnit
     , QuickCheck

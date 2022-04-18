@@ -8,9 +8,10 @@ module LazyTIS100.Parser (
     portParser, instructionSourceParser, instructionTargetParser, instructionParser, labelParser,
     programParser, programsParser,
     showTISInstruction, showTISProgram, showTISPrograms,
-    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms,
+    initPuzzleWithPrograms, seedForSpecAndTest, parsePuzzleWithPrograms, parsePuzzleWithPrograms',
     getInputStreamByPosX, getInputStreamByName, getOutputStreamByPosX, getOutputStreamByName,
     getOutputStreamActualByName, getOutputStreamActualValues,
+    getInputStreamGeneratorByName, setInputStreamGeneratorByName, setOutputStreamExpectedByName,
 
     parseOnlyReadS, parseOnlyFull
 ) where
@@ -340,6 +341,15 @@ parsePuzzleWithPrograms pzl seed progs = do
     initialCpuState <- initPuzzleWithPrograms pzl' seed progs'
     pure (pzl', initialCpuState)
 
+parsePuzzleWithPrograms' :: forall n. (Integral n, Show n, Eq n) => T.Text -> Int -> T.Text -> (Puzzle -> Either String Puzzle) -> Either String (Puzzle, Cpu n n)
+parsePuzzleWithPrograms' pzl seed progs f = do
+    --join $ initPuzzleWithPrograms <$> parseOnlyFull puzzleParser pzl <*> parseOnlyFull programsParser progs
+    pzl' <- parseOnlyFull (puzzleParser <?> "puzzle") pzl
+    pzl'' <- f pzl'
+    progs' <- parseOnlyFull (programsParser <?> "programs") progs
+    initialCpuState <- initPuzzleWithPrograms pzl'' seed progs'
+    pure (pzl'', initialCpuState)
+
 getStreamByPosX' :: StreamType -> Int -> Puzzle -> Cpu l n -> Either String (Node l n)
 getStreamByPosX' stype posX Puzzle {puzzleLayout} cpustate =
     case (stype, cpustate `at` (posY, posX)) of
@@ -354,14 +364,26 @@ getStreamByPosX' stype posX Puzzle {puzzleLayout} cpustate =
             _ -> let (_, (maxInnerY, _)) = A.bounds puzzleLayout in maxInnerY+1
 
 getStreamByName' :: StreamType -> Text -> Puzzle -> Cpu l n -> Either String (Node l n)
-getStreamByName' stype name puzzle@Puzzle {puzzleStreams} cpustate = do
-    posX <- findStream puzzleStreams
+getStreamByName' stype name puzzle cpustate = do
+    (_, _, posX, _) <- getPuzzleStreamByName' stype name puzzle
     getStreamByPosX' stype posX puzzle cpustate
+
+getPuzzleStreamByName' :: StreamType -> Text -> Puzzle -> Either String (StreamType, Text, Int, StreamGenerator)
+getPuzzleStreamByName' stype name puzzle@Puzzle {puzzleStreams} = findStream puzzleStreams
+    where
+        findStream [] = Left $ "no such " <> show stype <> " " <> show name <> ", we have " <> show (map (\(x,y,_,_) -> (x,y)) puzzleStreams)
+        findStream (s@(stype2, name2, _, _) : xs)
+            | stype == stype2 && name == name2 = Right s
+            | otherwise = findStream xs
+
+modifyStreamByName' :: StreamType -> Text -> ((StreamType, Text, Int, StreamGenerator) -> Either String (StreamType, Text, Int, StreamGenerator)) -> Puzzle -> Either String Puzzle
+modifyStreamByName' stype name action puzzle@Puzzle {puzzleStreams} =
+    findStream puzzleStreams >>= \x -> pure puzzle {puzzleStreams=x}
     where
         findStream [] = Left $ "no such " <> show stype <> " " <> show name
-        findStream ((stype2, name2, posX, _) : xs)
-            | stype == stype2 && name == name2 = Right posX
-            | otherwise = findStream xs
+        findStream (s@(stype2, name2, _, _) : xs)
+            | stype == stype2 && name == name2 = action s >>= \x' -> pure (x' : xs)
+            | otherwise = (s:) <$> findStream xs
 
 getInputStreamByPosX :: Int -> Puzzle -> Cpu l n -> Either String [n]
 getInputStreamByPosX posX puzzle cpustate = getStreamByPosX' StreamInput posX puzzle cpustate >>= getInputStreamValues
@@ -386,6 +408,15 @@ getOutputStreamActualByName name puzzle cpustate = getStreamByName' StreamOutput
 
 getOutputStreamActualValues (OutputNode {outputNodeActual}) = Right outputNodeActual
 getOutputStreamActualValues _ = Left "node at that index has an unexpected type"
+
+getInputStreamGeneratorByName :: Text -> Puzzle -> Either String StreamGenerator
+getInputStreamGeneratorByName name puzzle = getPuzzleStreamByName' StreamInput name puzzle >>= \(_, _, _, gen) -> pure gen
+
+setInputStreamGeneratorByName :: Text -> StreamGenerator -> Puzzle -> Either String Puzzle
+setInputStreamGeneratorByName name values = modifyStreamByName' StreamInput name (pure . fmap (const values))
+
+setOutputStreamExpectedByName :: Text -> StreamGenerator -> Puzzle -> Either String Puzzle
+setOutputStreamExpectedByName name values = modifyStreamByName' StreamOutput name (pure . fmap (const values))
 
 seedForSpecAndTest :: Int -> Int -> Int
 seedForSpecAndTest spec test = (100*spec + test - 1) `mod` (Data.Bits.shift 1 32)

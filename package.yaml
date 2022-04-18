@@ -1,6 +1,6 @@
 name:                lazy-tis100
 version:             0.1.0.0
-github:              "githubuser/lazy-tis100"
+github:              "BBBSnowball/lazy-tis-100"
 license:             MIT
 author:              "Benjamin Koch"
 maintainer:          "example@example.com"
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/lazy-tis100#readme>
+description:         Please see the README on GitHub at <https://github.com/BBBSnowball/lazy-tis-100#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -38,6 +38,7 @@ ghc-options:
   - -Wno-unused-matches
   - -Wno-missing-signatures
   - -Wno-unused-top-binds
+  - -Wno-missed-extra-shared-lib
 
 library:
   source-dirs: src
